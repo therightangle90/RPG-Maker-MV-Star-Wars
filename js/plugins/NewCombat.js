@@ -1,20 +1,19 @@
 /*:
  * @target MV
  * @plugindesc Replaces standard combat commands with Action, Manoeuvre, and End Turn.
+ *             Selected skills execute immediately; the menu reappears after each execution.
  *
  * Turn economy (actors and enemies):
  *   Free:   Action + Manoeuvre  OR  two Manoeuvres
- *   Costly: a third activity on top of the above, at the price of 2 MP (strain)
+ *   Costly: a third activity costs 2 MP (strain), deducted at the moment of execution
  *
- * The menu always shows three entries with the same labels.  Their colour and
- * enabled state update automatically after each choice:
- *
- *   • Nothing chosen yet        → Action (white)   Manoeuvre (white)
- *   • Action taken              → Action (grey)    Manoeuvre (white)
- *   • 1 Manoeuvre taken         → Action (white)   Manoeuvre (white)
- *   • Action + 1 Manoeuvre      → Action (grey)    Manoeuvre (yellow, costs 2 MP)
- *   • 2 Manoeuvres taken        → Action (yellow, costs 2 MP)   Manoeuvre (grey)
- *   • All three done            → Action (grey)    Manoeuvre (grey)
+ * Menu state (colours update dynamically):
+ *   • Nothing chosen        → Action (white)    Manoeuvre (white)
+ *   • Action taken          → Action (grey)     Manoeuvre (white)
+ *   • 1 Manoeuvre taken     → Action (white)    Manoeuvre (white)
+ *   • Action + 1 Manoeuvre  → Action (grey)     Manoeuvre (yellow, 2 MP; disabled if can't pay)
+ *   • 2 Manoeuvres taken    → Action (yellow, 2 MP; disabled if can't pay)  Manoeuvre (grey)
+ *   • All three done        → Action (grey)     Manoeuvre (grey)
  *
  * Enemies use the same three-slot structure.  AI picks Action-type skills for
  * slot 0 and Manoeuvre-type skills for slots 1–2, paying the MP cost when the
@@ -138,9 +137,8 @@
     // Window_ActorCommand – three entries whose state changes each selection.
     //
     // Per-actor state tracked on the actor object:
-    //   _actionChosen   {boolean} – action slot has been committed
-    //   _manoeuvreCount {number}  – 0, 1, or 2 manoeuvres committed
-    //   _strainPending  {boolean} – 2 MP to be deducted at End Turn
+    //   _actionChosen   {boolean} – action slot has been committed this turn
+    //   _manoeuvreCount {number}  – 0, 1, or 2 manoeuvres committed this turn
     // -----------------------------------------------------------------------
 
     Window_ActorCommand.prototype.numVisibleRows = function () {
@@ -153,7 +151,7 @@
         var aC    = !!actor._actionChosen;
         var mC    = actor._manoeuvreCount || 0;
 
-        // "Two free things" have been used when: Action + ≥1 Manoeuvre, or ≥2 Manoeuvres.
+        // "Two free things" have been used when: Action + >=1 Manoeuvre, or >=2 Manoeuvres.
         var twoUsed = (aC && mC >= 1) || mC >= 2;
 
         // ---- Action entry ----
@@ -213,6 +211,97 @@
     };
 
     // -----------------------------------------------------------------------
+    // BattleManager – immediate single-action execution machinery.
+    //
+    // When the actor confirms a skill (and a target if needed), instead of
+    // queuing it for later we execute it right away by temporarily replacing
+    // the actor's three-slot _actions array with a one-element array that
+    // holds only the chosen action.  The engine's own 'turn'/'action' phase
+    // machinery runs that single action and then returns control here so we
+    // can restore the full array and send the player back to the command menu.
+    //
+    // BattleManager flags used:
+    //   _immediateMode          {boolean} – currently in immediate-exec mode
+    //   _immediateActor         {Game_Actor} – actor being executed
+    //   _returningFromImmediate {boolean} – tells startActorCommandSelection
+    //                                        not to wipe the turn-state flags
+    // -----------------------------------------------------------------------
+
+    BattleManager._immediateMode          = false;
+    BattleManager._immediateActor         = null;
+    BattleManager._returningFromImmediate = false;
+
+    // Swap the actor's full action array for a single-entry array holding the
+    // chosen slot, then hand control to the engine's 'turn' phase.
+    BattleManager.startImmediateAction = function (actor, slotIndex) {
+        actor._immediateActionBackup = actor._actions.slice();
+        actor._actions = [actor._actions[slotIndex]];
+        this._immediateMode  = true;
+        this._immediateActor = actor;
+        this._subject        = actor;
+        this._phase          = 'turn';
+    };
+
+    // Common cleanup: restore the three-slot array and signal a return to input.
+    BattleManager._finishImmediate = function () {
+        var actor = this._immediateActor;
+        if (actor) {
+            actor._actions = actor._immediateActionBackup || [];
+            actor._immediateActionBackup = null;
+            while (actor._actions.length < TOTAL_SLOTS) {
+                actor._actions.push(new Game_Action(actor));
+            }
+        }
+        this._immediateMode          = false;
+        this._immediateActor         = null;
+        this._subject                = null;
+        this._returningFromImmediate = true;
+        this._phase                  = 'input';
+    };
+
+    // Guard processTurn so that an invalid immediate action (e.g. the actor
+    // somehow ran out of MP between choosing and executing) still returns
+    // cleanly to the command menu instead of falling through to enemy turns.
+    var _orig_BM_processTurn = BattleManager.processTurn;
+    BattleManager.processTurn = function () {
+        if (!this._immediateMode) {
+            return _orig_BM_processTurn.call(this);
+        }
+        var subject = this._subject;
+        var action  = subject.currentAction();
+        if (action) {
+            action.prepare();
+            var valid = action.isValid();
+            if (valid) {
+                this.startAction();   // sets _phase = 'action'; endAction() called later
+            }
+            subject.removeCurrentAction();
+            if (!valid) {
+                this._finishImmediate();
+            }
+        } else {
+            this._finishImmediate();
+        }
+    };
+
+    // After the engine finishes executing one action, restore the actor's full
+    // slot array and return to the command-input phase.
+    var _orig_BM_endAction = BattleManager.endAction;
+    BattleManager.endAction = function () {
+        if (this._immediateMode) {
+            this._logWindow.endAction(this._subject);
+            this._finishImmediate();
+            // If the action killed the last enemy (or all party members died),
+            // let the engine handle victory/defeat instead of showing the menu.
+            if (this.checkBattleEnd()) {
+                this._returningFromImmediate = false;
+            }
+            return;
+        }
+        _orig_BM_endAction.call(this);
+    };
+
+    // -----------------------------------------------------------------------
     // Scene_Battle – command wiring and action flow.
     // -----------------------------------------------------------------------
 
@@ -226,17 +315,21 @@
     };
 
     // Initialise per-actor turn state at the start of the input phase.
+    // When returning from an immediate execution we preserve the flags so the
+    // menu reflects what has already been done this turn.
     Scene_Battle.prototype.startActorCommandSelection = function () {
         var actor = BattleManager.actor();
-        if (actor) {
-            actor._actionChosen    = false;
-            actor._manoeuvreCount  = 0;
-            actor._strainPending   = false;
-            actor._actionInputIndex = 0;
-            actor._actions[ACTION_SLOT].clear();
-            actor._actions[MANOEUVRE_SLOT].clear();
-            actor._actions[MANOEUVRE2_SLOT].clear();
+        if (!BattleManager._returningFromImmediate) {
+            if (actor) {
+                actor._actionChosen    = false;
+                actor._manoeuvreCount  = 0;
+                actor._actionInputIndex = 0;
+                actor._actions[ACTION_SLOT].clear();
+                actor._actions[MANOEUVRE_SLOT].clear();
+                actor._actions[MANOEUVRE2_SLOT].clear();
+            }
         }
+        BattleManager._returningFromImmediate = false;
         this._currentInputSlot = ACTION_SLOT;
         this._statusWindow.select(actor ? actor.index() : 0);
         this._partyCommandWindow.close();
@@ -267,19 +360,41 @@
         this._skillWindow.activate();
     };
 
-    // End Turn – deduct strain cost if a costly third activity was committed.
+    // End Turn – all actions have already executed immediately, so just clear the
+    // slots to prevent them re-running during the enemy phase, then advance.
     Scene_Battle.prototype.commandEndTurn = function () {
         var actor = BattleManager.actor();
-        if (actor._strainPending) {
-            actor.gainMp(-STRAIN_MP_COST);
-            actor._strainPending = false;
+        for (var i = 0; i < TOTAL_SLOTS; i++) {
+            actor._actions[i].clear();
         }
-        actor._actionInputIndex = actor.numActions() - 1;
+        actor._actionInputIndex = actor.numActions() - 1; // satisfies BattleManager.selectNextCommand
         this.selectNextCommand();
     };
 
-    // Skill confirmed – record choice, flag strain if this was the costly third activity,
-    // then handle target selection or return to the (refreshed) command window.
+    // Record the choice flags and deduct strain (if this is the costly 3rd activity),
+    // then hand off to BattleManager for immediate execution.
+    Scene_Battle.prototype._executeImmediateAction = function () {
+        var actor     = BattleManager.actor();
+        var slotIndex = this._currentInputSlot;
+        var aC = !!actor._actionChosen;
+        var mC = actor._manoeuvreCount || 0;
+
+        // Third activity (Action after 2 Manoeuvres, or 2nd Manoeuvre after Action) costs strain.
+        var isThird = (!aC && mC >= 2 && slotIndex === ACTION_SLOT) ||
+                      (aC  && mC >= 1 && slotIndex !== ACTION_SLOT);
+        if (isThird) actor.gainMp(-STRAIN_MP_COST);
+
+        if (slotIndex === ACTION_SLOT) {
+            actor._actionChosen = true;
+        } else {
+            actor._manoeuvreCount = mC + 1;
+        }
+
+        BattleManager.startImmediateAction(actor, slotIndex);
+    };
+
+    // Skill confirmed – execute immediately if no target needed; otherwise open
+    // the appropriate target-selection window.
     Scene_Battle.prototype.onSkillOk = function () {
         var skill  = this._skillWindow.item();
         var actor  = BattleManager.actor();
@@ -287,25 +402,10 @@
         action.setSkill(skill.id);
         actor.setLastBattleSkill(skill);
 
-        var aC = !!actor._actionChosen;
-        var mC = actor._manoeuvreCount || 0;
-
-        // Costly "third thing": Action chosen while 2 manoeuvres already taken,
-        // or second Manoeuvre chosen while Action is already taken.
-        var isThird = (!aC && mC >= 2 && this._currentInputSlot === ACTION_SLOT) ||
-                      (aC  && mC >= 1 && this._currentInputSlot !== ACTION_SLOT);
-        if (isThird) actor._strainPending = true;
-
-        if (this._currentInputSlot === ACTION_SLOT) {
-            actor._actionChosen = true;
-        } else {
-            actor._manoeuvreCount = mC + 1;
-        }
-
         this._skillWindow.hide();
 
         if (!action.needsSelection()) {
-            this._actorCommandWindow.setup(actor);
+            this._executeImmediateAction();
         } else if (action.isForOpponent()) {
             this.selectEnemySelection();
         } else {
@@ -319,14 +419,14 @@
         this._actorCommandWindow.activate();
     };
 
-    // Enemy target confirmed – return to the command window.
+    // Enemy target confirmed – execute the action immediately.
     Scene_Battle.prototype.onEnemyOk = function () {
         var action = BattleManager.inputtingAction();
         action.setTarget(this._enemyWindow.enemyIndex());
         this._enemyWindow.hide();
         this._skillWindow.hide();
         this._itemWindow.hide();
-        this._actorCommandWindow.setup(BattleManager.actor());
+        this._executeImmediateAction();
     };
 
     // Enemy target cancelled – re-open the appropriate skill list.
@@ -338,14 +438,14 @@
         this._skillWindow.activate();
     };
 
-    // Ally target confirmed – return to the command window.
+    // Ally target confirmed – execute the action immediately.
     Scene_Battle.prototype.onActorOk = function () {
         var action = BattleManager.inputtingAction();
         action.setTarget(this._actorWindow.index());
         this._actorWindow.hide();
         this._skillWindow.hide();
         this._itemWindow.hide();
-        this._actorCommandWindow.setup(BattleManager.actor());
+        this._executeImmediateAction();
     };
 
     // Ally target cancelled – re-open the appropriate skill list.
