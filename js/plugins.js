@@ -7,5 +7,5 @@ var $plugins =
 {"name":"SkipPrompt","status":true,"description":"","parameters":{}},
 {"name":"StarWarsDice","status":true,"description":"","parameters":{}},
 {"name":"Species","status":true,"description":"","parameters":{}},
-{"name":"NewCombat","status":false,"description":"Action + Manoeuvre dual selection (fixed)","parameters":{}}
+{"name":"NewCombat","status":true,"description":"Action / Manoeuvre / End Turn combat commands","parameters":{}}
 ];
