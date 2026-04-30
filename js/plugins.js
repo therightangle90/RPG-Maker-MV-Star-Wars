@@ -7,5 +7,7 @@ var $plugins =
 {"name":"SkipPrompt","status":true,"description":"","parameters":{}},
 {"name":"StarWarsDice","status":true,"description":"","parameters":{}},
 {"name":"Species","status":true,"description":"","parameters":{}},
-{"name":"NewCombat","status":true,"description":"Action / Manoeuvre / End Turn combat commands","parameters":{}}
+{"name":"NewCombat","status":true,"description":"Action / Manoeuvre / End Turn combat commands","parameters":{}},
+{"name":"SingleClickSelect","status":true,"description":"Confirms menu selection on first click/tap rather than requiring a second click.","parameters":{}},
+{"name":"InitialState","status":true,"description":"Applies state ID 12 (Standing) to all party members on new game or load.","parameters":{}}
 ];
