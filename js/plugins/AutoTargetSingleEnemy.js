@@ -14,8 +14,15 @@
         if (aliveEnemies.length === 1) {
             var action = BattleManager.inputtingAction();
             if (action && action.item() && action.item().scope === 1) {
+                // Set the target directly. Do NOT call onEnemyOk() here because
+                // that overrides the target with _enemyWindow.enemyIndex() which
+                // returns -1 on an unshown window, leading to makeTargets() using
+                // randomTarget() which can return null and break the action loop.
                 action.setTarget(aliveEnemies[0].index());
-                this.onEnemyOk();
+                this._enemyWindow.hide();
+                this._skillWindow.hide();
+                this._itemWindow.hide();
+                this._executeImmediateAction();
                 return;
             }
         }
