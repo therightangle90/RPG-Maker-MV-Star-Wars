@@ -1,11 +1,12 @@
 /*:
  * @target MV
- * @plugindesc Replaces standard combat commands with Action, Manoeuvre, and End Turn.
+ * @plugindesc Replaces standard combat commands with Action, Manoeuvre, Incidental, and End Turn.
  *             Selected skills execute immediately; the menu reappears after each execution.
  *
  * Turn economy (actors and enemies):
  *   Free:   Action + Manoeuvre  OR  two Manoeuvres
  *   Costly: a third activity costs 2 MP (strain), deducted at the moment of execution
+ *   Incidental: unlimited; never costs strain and does not count toward the above limits
  *
  * Menu state (colours update dynamically):
  *   • Nothing chosen        → Action (white)    Manoeuvre (white)
@@ -14,6 +15,7 @@
  *   • Action + 1 Manoeuvre  → Action (grey)     Manoeuvre (yellow, 2 MP; disabled if can't pay)
  *   • 2 Manoeuvres taken    → Action (yellow, 2 MP; disabled if can't pay)  Manoeuvre (grey)
  *   • All three done        → Action (grey)     Manoeuvre (grey)
+ *   • Incidental            → always available, white, no limit
  *
  * Enemies use the same three-slot structure.  AI picks Action-type skills for
  * slot 0 and Manoeuvre-type skills for slots 1–2, paying the MP cost when the
@@ -25,12 +27,14 @@
 
     // Skill type IDs (System.json skillTypes):
     // 0='' 1=Magic 2=Special 3=Action 4=Manoeuvre 5=Incidental
-    var ACTION_STYPE    = 3;
-    var MANOEUVRE_STYPE = 4;
+    var ACTION_STYPE     = 3;
+    var MANOEUVRE_STYPE  = 4;
+    var INCIDENTAL_STYPE = 5;
 
     var ACTION_SLOT     = 0;  // Action-type skill
     var MANOEUVRE_SLOT  = 1;  // First Manoeuvre
     var MANOEUVRE2_SLOT = 2;  // Second Manoeuvre (costly when Action also used)
+    var INCIDENTAL_SLOT = 3;  // Temporary slot used during incidental execution
     var TOTAL_SLOTS     = 3;
 
     var STRAIN_MP_COST  = 2;  // MP charged for the costly third activity
@@ -142,7 +146,7 @@
     // -----------------------------------------------------------------------
 
     Window_ActorCommand.prototype.numVisibleRows = function () {
-        return 3;
+        return 4;
     };
 
     Window_ActorCommand.prototype.makeCommandList = function () {
@@ -176,9 +180,10 @@
             mEnabled = true; mExt = null;
         }
 
-        this.addCommand('Action',    'action',    aEnabled, aExt);
-        this.addCommand('Manoeuvre', 'manoeuvre', mEnabled, mExt);
-        this.addCommand('End Turn',  'endTurn',   true,     null);
+        this.addCommand('Action',     'action',     aEnabled, aExt);
+        this.addCommand('Manoeuvre',  'manoeuvre',  mEnabled, mExt);
+        this.addCommand('Incidental', 'incidental', true,     null);
+        this.addCommand('End Turn',   'endTurn',    true,     null);
     };
 
     // Render entries that carry the 'yellow' ext tag in crisis/warning colour.
@@ -200,7 +205,7 @@
         var aC = !!this._actor._actionChosen;
         var mC = this._actor._manoeuvreCount || 0;
         if (aC && mC >= 1) {
-            this.select(2); // both free slots used – suggest End Turn
+            this.select(3); // both free slots used – suggest End Turn
         } else if (aC) {
             this.select(1); // action done – suggest Manoeuvre
         } else if (mC >= 1) {
@@ -251,12 +256,9 @@
             while (actor._actions.length < TOTAL_SLOTS) {
                 actor._actions.push(new Game_Action(actor));
             }
+            // Trim any temporary incidental slot back down to the standard three.
+            while (actor._actions.length > TOTAL_SLOTS) actor._actions.pop();
         }
-        this._immediateMode          = false;
-        this._immediateActor         = null;
-        this._subject                = null;
-        this._returningFromImmediate = true;
-        this._phase                  = 'input';
     };
 
     // Guard processTurn so that an invalid immediate action (e.g. the actor
@@ -307,10 +309,11 @@
 
     Scene_Battle.prototype.createActorCommandWindow = function () {
         this._actorCommandWindow = new Window_ActorCommand();
-        this._actorCommandWindow.setHandler('action',    this.commandAction.bind(this));
-        this._actorCommandWindow.setHandler('manoeuvre', this.commandManoeuvre.bind(this));
-        this._actorCommandWindow.setHandler('endTurn',   this.commandEndTurn.bind(this));
-        this._actorCommandWindow.setHandler('cancel',    this.selectPreviousCommand.bind(this));
+        this._actorCommandWindow.setHandler('action',     this.commandAction.bind(this));
+        this._actorCommandWindow.setHandler('manoeuvre',  this.commandManoeuvre.bind(this));
+        this._actorCommandWindow.setHandler('incidental', this.commandIncidental.bind(this));
+        this._actorCommandWindow.setHandler('endTurn',    this.commandEndTurn.bind(this));
+        this._actorCommandWindow.setHandler('cancel',     this.selectPreviousCommand.bind(this));
         this.addWindow(this._actorCommandWindow);
     };
 
@@ -360,6 +363,22 @@
         this._skillWindow.activate();
     };
 
+    // Incidental – unlimited; uses a temporary 4th slot that is trimmed away after execution.
+    Scene_Battle.prototype.commandIncidental = function () {
+        var actor = BattleManager.actor();
+        // Ensure the temporary incidental slot exists.
+        while (actor._actions.length <= INCIDENTAL_SLOT) {
+            actor._actions.push(new Game_Action(actor));
+        }
+        this._currentInputSlot  = INCIDENTAL_SLOT;
+        actor._actionInputIndex = INCIDENTAL_SLOT;
+        this._skillWindow.setActor(actor);
+        this._skillWindow.setStypeId(INCIDENTAL_STYPE);
+        this._skillWindow.refresh();
+        this._skillWindow.show();
+        this._skillWindow.activate();
+    };
+
     // End Turn – all actions have already executed immediately, so just clear the
     // slots to prevent them re-running during the enemy phase, then advance.
     Scene_Battle.prototype.commandEndTurn = function () {
@@ -379,15 +398,19 @@
         var aC = !!actor._actionChosen;
         var mC = actor._manoeuvreCount || 0;
 
-        // Third activity (Action after 2 Manoeuvres, or 2nd Manoeuvre after Action) costs strain.
-        var isThird = (!aC && mC >= 2 && slotIndex === ACTION_SLOT) ||
-                      (aC  && mC >= 1 && slotIndex !== ACTION_SLOT);
-        if (isThird) actor.gainMp(-STRAIN_MP_COST);
+        // Incidentals are unlimited and never cost strain; skip tracking for them.
+        var isIncidental = (slotIndex === INCIDENTAL_SLOT);
+        if (!isIncidental) {
+            // Third activity (Action after 2 Manoeuvres, or 2nd Manoeuvre after Action) costs strain.
+            var isThird = (!aC && mC >= 2 && slotIndex === ACTION_SLOT) ||
+                          (aC  && mC >= 1 && slotIndex !== ACTION_SLOT);
+            if (isThird) actor.gainMp(-STRAIN_MP_COST);
 
-        if (slotIndex === ACTION_SLOT) {
-            actor._actionChosen = true;
-        } else {
-            actor._manoeuvreCount = mC + 1;
+            if (slotIndex === ACTION_SLOT) {
+                actor._actionChosen = true;
+            } else {
+                actor._manoeuvreCount = mC + 1;
+            }
         }
 
         BattleManager.startImmediateAction(actor, slotIndex);
@@ -414,7 +437,12 @@
     };
 
     // Skill cancelled – return to the command window.
+    // If we were in incidental mode, remove the temporary slot.
     Scene_Battle.prototype.onSkillCancel = function () {
+        if (this._currentInputSlot === INCIDENTAL_SLOT) {
+            var actor = BattleManager.actor();
+            while (actor._actions.length > TOTAL_SLOTS) actor._actions.pop();
+        }
         this._skillWindow.hide();
         this._actorCommandWindow.activate();
     };
@@ -432,7 +460,9 @@
     // Enemy target cancelled – re-open the appropriate skill list.
     Scene_Battle.prototype.onEnemyCancel = function () {
         this._enemyWindow.hide();
-        var stypeId = (this._currentInputSlot === ACTION_SLOT) ? ACTION_STYPE : MANOEUVRE_STYPE;
+        var stypeId = this._currentInputSlot === ACTION_SLOT     ? ACTION_STYPE     :
+                      this._currentInputSlot === INCIDENTAL_SLOT ? INCIDENTAL_STYPE :
+                      MANOEUVRE_STYPE;
         this._skillWindow.setStypeId(stypeId);
         this._skillWindow.show();
         this._skillWindow.activate();
@@ -451,7 +481,9 @@
     // Ally target cancelled – re-open the appropriate skill list.
     Scene_Battle.prototype.onActorCancel = function () {
         this._actorWindow.hide();
-        var stypeId = (this._currentInputSlot === ACTION_SLOT) ? ACTION_STYPE : MANOEUVRE_STYPE;
+        var stypeId = this._currentInputSlot === ACTION_SLOT     ? ACTION_STYPE     :
+                      this._currentInputSlot === INCIDENTAL_SLOT ? INCIDENTAL_STYPE :
+                      MANOEUVRE_STYPE;
         this._skillWindow.setStypeId(stypeId);
         this._skillWindow.show();
         this._skillWindow.activate();
