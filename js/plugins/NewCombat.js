@@ -293,10 +293,12 @@
         if (this._immediateMode) {
             this._logWindow.endAction(this._subject);
             this._finishImmediate();
-            // If the action killed the last enemy (or all party members died),
-            // let the engine handle victory/defeat instead of showing the menu.
-            if (this.checkBattleEnd()) {
-                this._returningFromImmediate = false;
+            this._immediateMode = false;
+            // If the action ended the battle let the engine handle victory/defeat.
+            // Otherwise return control to the player's command menu.
+            if (!this.checkBattleEnd()) {
+                this._returningFromImmediate = true;
+                this._phase = 'input';
             }
             return;
         }
