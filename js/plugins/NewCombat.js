@@ -315,7 +315,7 @@
         this._actorCommandWindow.setHandler('manoeuvre',  this.commandManoeuvre.bind(this));
         this._actorCommandWindow.setHandler('incidental', this.commandIncidental.bind(this));
         this._actorCommandWindow.setHandler('endTurn',    this.commandEndTurn.bind(this));
-        this._actorCommandWindow.setHandler('cancel',     this.selectPreviousCommand.bind(this));
+        this._actorCommandWindow.setHandler('cancel',     this.onActorCommandCancel.bind(this));
         this.addWindow(this._actorCommandWindow);
     };
 
@@ -339,6 +339,20 @@
         this._statusWindow.select(actor ? actor.index() : 0);
         this._partyCommandWindow.close();
         this._actorCommandWindow.setup(actor);
+    };
+
+    // Cancel at the actor command window: only allow navigating back if no
+    // actions have been committed this turn. Once any choice is locked in,
+    // ignore the cancel so players can't reset their spent actions.
+    Scene_Battle.prototype.onActorCommandCancel = function () {
+        var actor = BattleManager.actor();
+        var committed = actor && (actor._actionChosen || (actor._manoeuvreCount || 0) > 0);
+        if (committed) {
+            // Choices are already spent – stay on the command window.
+            this._actorCommandWindow.activate();
+        } else {
+            this.selectPreviousCommand();
+        }
     };
 
     // Action – always maps to slot 0.
