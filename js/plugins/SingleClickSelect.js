@@ -8,16 +8,30 @@
 (function () {
     'use strict';
 
-    // Update the highlight whenever the pointer moves to a different cell,
-    // even without clicking.  Tracking the last checked coordinate means
-    // keyboard / gamepad navigation still works normally when the mouse is
-    // stationary – the hover check only fires when the pointer actually moves.
+    // RPG Maker MV's TouchInput only updates its stored x/y coordinates while
+    // a mouse button is pressed (TouchInput.isPressed()).  Pure mouse movement
+    // without a button held is therefore invisible to TouchInput.x/y, which is
+    // why overriding processTouch alone never produced hover behaviour.
+    //
+    // Fix: maintain our own canvas-space coordinates that are updated on every
+    // mousemove event, regardless of button state.
+    var _hoverCanvasX = 0;
+    var _hoverCanvasY = 0;
+
+    document.addEventListener('mousemove', function (e) {
+        _hoverCanvasX = Graphics.pageToCanvasX(e.pageX);
+        _hoverCanvasY = Graphics.pageToCanvasY(e.pageY);
+    });
+
+    // Every frame, check whether the cursor is over a different cell and move
+    // the selection highlight there.  The coordinate guard prevents needless
+    // redraws when the mouse is stationary; keyboard/gamepad nav is unaffected.
     var _processTouch = Window_Selectable.prototype.processTouch;
     Window_Selectable.prototype.processTouch = function () {
         _processTouch.call(this);
         if (this.isOpenAndActive()) {
-            var x = this.canvasToLocalX(TouchInput.x);
-            var y = this.canvasToLocalY(TouchInput.y);
+            var x = this.canvasToLocalX(_hoverCanvasX);
+            var y = this.canvasToLocalY(_hoverCanvasY);
             if (x !== this._lastHoverX || y !== this._lastHoverY) {
                 this._lastHoverX = x;
                 this._lastHoverY = y;

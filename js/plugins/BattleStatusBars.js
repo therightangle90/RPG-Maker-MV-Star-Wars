@@ -15,7 +15,7 @@
     // Layout constants
     // -----------------------------------------------------------------------
     var GAP           = 8;     // pixels between adjacent bars
-    var LABEL_W_RATIO = 0.38;  // fraction of bar width reserved for the label
+    var LABEL_W_RATIO = 0.67;  // fraction of bar width reserved for the label (~2/3)
     var MIN_LABEL_W   = 40;    // minimum label width (pixels)
 
     // -----------------------------------------------------------------------
