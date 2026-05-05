@@ -1,9 +1,10 @@
 # BattlefieldMovement.js
 
-A plugin for **RPG Maker MV** that gives every combatant — both party members
-and enemies — a position on a two-dimensional grid during battle.  It also
-provides a third, **Z axis** that tracks close-quarters engagement between
-entities that share the same cell.
+A plugin for **RPG Maker MV** that places every combatant — party members and
+enemies — on a coordinate grid during battle.  Only **explicitly declared
+zones** are reachable; players choose their destination from an in-battle
+menu.  A Z axis tracks close-quarters engagement between combatants that share
+the same cell.
 
 ---
 
@@ -11,35 +12,59 @@ entities that share the same cell.
 
 1. [Concepts](#concepts)
 2. [Battler Keys](#battler-keys)
-3. [Plugin Parameters](#plugin-parameters)
-4. [Plugin Commands Reference](#plugin-commands-reference)
+3. [Plugin Commands Reference](#plugin-commands-reference)
+   - [ZONE_MAP / ZONE](#zone_map--zone)
    - [MOVE](#move)
+   - [PROMPT_MOVE](#prompt_move)
    - [ENGAGE](#engage)
    - [DISENGAGE](#disengage)
-   - [BOUNDS](#bounds)
-   - [LABEL / LABEL_MAP](#label--label_map)
-   - [DESC / DESC_MAP](#desc--desc_map)
-   - [DEFAULT_DESC / MAP_DESC](#default_desc--map_desc)
+   - [LABEL_MAP / LABEL](#label_map--label)
+   - [DESC_MAP / DESC](#desc_map--desc)
    - [QUERY](#query)
    - [SAME_ZONE](#same_zone)
-5. [The Engagement System in Detail](#the-engagement-system-in-detail)
-6. [Reading Position Data in Scripts / Conditional Branches](#reading-position-data-in-scripts--conditional-branches)
-7. [Typical Battle Setup Flow](#typical-battle-setup-flow)
-8. [Complete Examples](#complete-examples)
-9. [Save / Load Compatibility](#save--load-compatibility)
-10. [FAQ](#faq)
+4. [The Engagement System in Detail](#the-engagement-system-in-detail)
+5. [Reading Position Data in Scripts / Conditional Branches](#reading-position-data-in-scripts--conditional-branches)
+6. [Typical Battle Setup Flow](#typical-battle-setup-flow)
+7. [Complete Examples](#complete-examples)
+8. [Save / Load Compatibility](#save--load-compatibility)
+9. [FAQ](#faq)
 
 ---
 
 ## Concepts
 
+### Declared Zones Only
+
+The battlefield is **not** an open, unbounded grid.  Every reachable location
+must be declared in advance with `BATTLEFIELD ZONE_MAP` (per-map) or
+`BATTLEFIELD ZONE` (global).  A location that has not been declared does not
+exist as far as movement is concerned.
+
+When a player character uses a move action (via `BATTLEFIELD PROMPT_MOVE`),
+the plugin looks at their current X/Y coordinate and builds a list of every
+declared zone that is exactly **one step away** in any of the eight cardinal
+or diagonal directions.  That list — sorted alphabetically — is presented as
+an in-battle selection window.
+
 ### The X / Y Grid
 
-Each combatant has an **X** and **Y** integer coordinate.  Movement is free
-in all eight directions (orthogonal and diagonal), subject to the configured
-boundaries.  At the start of every battle every combatant is placed at
-`(0, 0)`; your Common Events or Battle Events then move them to starting
-positions.
+Each combatant has an **integer X** and **integer Y** coordinate.  Movement
+is allowed in all eight directions, but only to zones that have been
+explicitly declared for the current map.  At the start of every battle every
+combatant is reset to `(0, 0)`.  Your battle-start event then uses
+`BATTLEFIELD MOVE` to place them at their actual starting locations.
+
+### Adjacency Rule
+
+A zone is considered reachable from `(x, y)` if it satisfies
+**Chebyshev distance 1**:
+
+```
+|dest_x − x| ≤ 1  AND  |dest_y − y| ≤ 1  AND  (dest_x, dest_y) ≠ (x, y)
+```
+
+This means all eight surrounding cells are candidates, but only the declared
+ones actually appear in the menu.
 
 ### The Z Layer — Engagement
 
@@ -50,26 +75,12 @@ When two or more combatants occupy the exact same `(x, y)` cell they may
 * **Cannot move** on the X/Y axis until they disengage.
 * Can still use skills, items, and other battle actions normally.
 
-Multiple entities can belong to the same Z group.  A third combatant can
-move into the same cell and then engage any member of an existing group to
-join it.
-
-### Zone Labels and Descriptions
-
-Every coordinate can have a human-readable **label** and a longer
-**description**.  These can be set globally (applying to all maps) or
-per-map (applied only when the battle started on that specific map).  Per-map
-data takes priority over global data.
-
-A **default description** is shown for any coordinate that has no specific
-description.  There is both a global default and a per-map default.
-
 ---
 
 ## Battler Keys
 
-All plugin commands that refer to a specific combatant use a short string
-called a **battler key**.
+All plugin commands that refer to a specific combatant use a **battler key**
+string:
 
 | Format | Refers to |
 |--------|-----------|
@@ -78,23 +89,8 @@ called a **battler key**.
 | `e0`   | The enemy at **troop index 0** (the first enemy in the troop) |
 | `e1`   | The enemy at **troop index 1** (the second enemy) |
 
-> **Tip:** Actor IDs are the numbers shown in the Actors tab of the database.
-> Enemy troop indices are zero-based, so the first enemy in "Troop #3" is
-> index 0, the second is index 1, and so on.
-
----
-
-## Plugin Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| **Global Default Zone Description** | `An open area.` | Fallback description for any coordinate that has no specific description and no per-map fallback. |
-| **Default Min X** | `-3` | Left boundary applied at the start of every battle. |
-| **Default Max X** | `3` | Right boundary. |
-| **Default Min Y** | `-3` | Bottom (or "back") boundary. |
-| **Default Max Y** | `3` | Top (or "front") boundary. |
-
-All boundaries can also be overridden at runtime with the `BOUNDS` command.
+> **Tip:** Actor IDs are shown in the Actors tab of the RPG Maker database.
+> Enemy troop indices are zero-based.
 
 ---
 
@@ -104,22 +100,83 @@ All commands start with the word **`BATTLEFIELD`** (case-insensitive).
 
 ---
 
+### ZONE_MAP / ZONE
+
+```
+BATTLEFIELD ZONE_MAP <mapId> <x> <y> <name> [description...]
+BATTLEFIELD ZONE     <x> <y> <name> [description...]
+```
+
+**Declares a location as a valid zone.**  This is the primary setup command.
+
+* `ZONE_MAP` declares a zone for a specific map ID.  Per-map declarations
+  take priority over global ones.
+* `ZONE` declares a global zone, used on any map that doesn't override it.
+* The first token after the coordinates is the **display name** (shown in the
+  movement menu).
+* Everything after the name is treated as an optional **description**.
+
+A coordinate that has *never* been declared cannot appear in the movement
+menu and cannot be moved to via `PROMPT_MOVE`.
+
+**Examples:**
+```
+BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll Open ground beside the oak trees.
+BATTLEFIELD ZONE_MAP 5 0 1 Book Depository A six-floor red-brick building.
+BATTLEFIELD ZONE_MAP 5 1 0 Public Road A busy cobblestone street.
+BATTLEFIELD ZONE 0 0 The Courtyard
+```
+
+---
+
 ### MOVE
 
 ```
 BATTLEFIELD MOVE <battlerKey> <x> <y>
 ```
 
-Moves a battler to the specified coordinates.
+**Force-places** a battler at the given coordinates without showing any
+player menu.  Use this for:
 
-**Conditions checked:**
-* The battler must be **free** (Z = 0).  Engaged battlers cannot move.
-* The destination must be **within the current bounds**.
+* Placing battlers at their starting positions at the beginning of a fight.
+* Scripted / enemy-AI movement.
+
+The battler must not be currently engaged (Z > 0).
+
+> There is no zone validation on `MOVE`.  This lets you position battlers
+> even before zones are fully declared, and allows enemies to be placed
+> programmatically on any coordinate.
 
 **Examples:**
 ```
-BATTLEFIELD MOVE a1 2 -1
-BATTLEFIELD MOVE e0 0 3
+BATTLEFIELD MOVE a1 0 0
+BATTLEFIELD MOVE e0 1 0
+```
+
+---
+
+### PROMPT_MOVE
+
+```
+BATTLEFIELD PROMPT_MOVE <battlerKey>
+```
+
+**Shows the player an in-battle selection window** listing every declared zone
+adjacent to the battler's current position (sorted A–Z).  The event pauses
+until the player makes a choice.
+
+* If the player selects a zone, the battler is moved there.
+* If the player presses Cancel, the battler stays in place.
+* If there are no reachable declared zones (e.g. the battler is surrounded by
+  undeclared coordinates), the window is skipped and the event continues
+  immediately.
+* The command is silently skipped if the battler is currently engaged (Z > 0).
+
+Typically called from the effect Common Event of a "Move" skill or manoeuvre.
+
+**Example:**
+```
+BATTLEFIELD PROMPT_MOVE a1
 ```
 
 ---
@@ -132,17 +189,14 @@ BATTLEFIELD ENGAGE <attackerKey> <targetKey>
 
 The attacker engages the target.
 
-**Conditions checked:**
-* The attacker must currently be **free** (Z = 0).
-* Both battlers must be at **exactly the same X/Y coordinates**.
+**Conditions:**
+* The attacker must be free (Z = 0).
+* Both battlers must be at the same X/Y coordinate.
 
 **What happens:**
-1. If the target is already in a Z group (Z > 0), the attacker joins that
-   existing group.
-2. If the target is free (Z = 0), a new Z group is created and both are
-   placed into it.
-3. The attacker's `engagedWith` is recorded as the target.  The target's
-   `engagedWith` is not changed (they were pulled in, not the initiator).
+1. If the target is already in a Z group, the attacker joins it.
+2. If the target is free, a new Z group is created and both are placed into it.
+3. The attacker's `engagedWith` pointer is set to the target.
 
 **Examples:**
 ```
@@ -159,7 +213,7 @@ BATTLEFIELD DISENGAGE <battlerKey>
 ```
 
 Removes the battler from its Z group and returns it to Z = 0, freeing it to
-move on the X/Y grid again.
+move again.
 
 After the battler leaves, the plugin runs a **cascade cleanup** on the
 remaining group members (see [The Engagement System in Detail](#the-engagement-system-in-detail)).
@@ -171,93 +225,38 @@ BATTLEFIELD DISENGAGE a1
 
 ---
 
-### BOUNDS
+### LABEL_MAP / LABEL
 
 ```
-BATTLEFIELD BOUNDS <minX> <maxX> <minY> <maxY>
-```
-
-Overrides the movement boundaries for the rest of the current combat.
-Call this at battle start (e.g. in a battle-start Common Event) to match
-the area boundaries of the current map encounter.
-
-**Example — restrict to a 7×7 grid centred on 0:**
-```
-BATTLEFIELD BOUNDS -3 3 -3 3
-```
-
-**Example — large open battle:**
-```
-BATTLEFIELD BOUNDS -10 10 -5 5
-```
-
----
-
-### LABEL / LABEL_MAP
-
-```
-BATTLEFIELD LABEL <x> <y> <label text...>
 BATTLEFIELD LABEL_MAP <mapId> <x> <y> <label text...>
+BATTLEFIELD LABEL     <x> <y> <label text...>
 ```
 
-Sets a short label for a coordinate (e.g. a room name or landmark).
-
-* **LABEL** sets a **global** label visible in all maps.
-* **LABEL_MAP** sets a **per-map** label that overrides the global one when
-  the battle started on that map.
-
-All tokens after the coordinates are joined with spaces to form the label.
+Updates only the **display name** of an already-declared zone.  Does not
+change the description.  Use `ZONE_MAP`/`ZONE` to set name and description
+together when first declaring a zone.
 
 **Examples:**
 ```
-BATTLEFIELD LABEL 0 0 The Throne Room
-BATTLEFIELD LABEL -2 3 Hangar Bay
-BATTLEFIELD LABEL_MAP 3 1 1 Hangar Bay Alpha
+BATTLEFIELD LABEL_MAP 5 0 0 The Knoll
+BATTLEFIELD LABEL 0 0 Central Square
 ```
 
 ---
 
-### DESC / DESC_MAP
+### DESC_MAP / DESC
 
 ```
-BATTLEFIELD DESC <x> <y> <description text...>
 BATTLEFIELD DESC_MAP <mapId> <x> <y> <description text...>
+BATTLEFIELD DESC     <x> <y> <description text...>
 ```
 
-Sets a longer description for a coordinate.  Useful for flavour text
-read aloud to players.
-
-* **DESC** sets a **global** description.
-* **DESC_MAP** sets a **per-map** description.
+Updates only the **description** of an already-declared zone.
 
 **Examples:**
 ```
-BATTLEFIELD DESC 0 0 The centre of the vast throne chamber. Ancient pillars rise on all sides.
-BATTLEFIELD DESC_MAP 7 -3 2 A narrow catwalk over the reactor core. One wrong step means death.
-```
-
----
-
-### DEFAULT_DESC / MAP_DESC
-
-```
-BATTLEFIELD DEFAULT_DESC <description text...>
-BATTLEFIELD MAP_DESC <mapId> <description text...>
-```
-
-Sets fallback descriptions used when a coordinate has no specific
-description.
-
-* **DEFAULT_DESC** is the **global** fallback (used everywhere).
-* **MAP_DESC** is a **per-map** fallback (used only when the battle started
-  on the given map).
-
-Per-map fallback takes priority over the global fallback.
-
-**Examples:**
-```
-BATTLEFIELD DEFAULT_DESC An open area with no distinguishing features.
-BATTLEFIELD MAP_DESC 3 The Death Star hangar bay. Rows of TIE fighters line the walls.
+BATTLEFIELD DESC_MAP 5 0 1 The six-floor building where the shot was fired.
+BATTLEFIELD DESC 0 0 Open ground in the middle of the town.
 ```
 
 ---
@@ -268,19 +267,12 @@ BATTLEFIELD MAP_DESC 3 The Death Star hangar bay. Rows of TIE fighters line the 
 BATTLEFIELD QUERY <battlerKey> <varIdX> <varIdY> <varIdZ>
 ```
 
-Writes the battler's current X, Y, and Z coordinates into three game
-variables.  Use these variables in Conditional Branches or Show Text
-commands.
+Writes the battler's current X, Y, Z into three game variables.
 
 **Example — store actor 1's position in variables 10, 11, 12:**
 ```
 BATTLEFIELD QUERY a1 10 11 12
 ```
-
-After this command:
-* Variable 10 = actor 1's current X
-* Variable 11 = actor 1's current Y
-* Variable 12 = actor 1's current Z (0 = free, >0 = engaged group)
 
 ---
 
@@ -290,9 +282,8 @@ After this command:
 BATTLEFIELD SAME_ZONE <battlerKeyA> <battlerKeyB> <switchId>
 ```
 
-Sets the specified game switch to **ON** if both battlers are at the same
-X/Y coordinate (regardless of Z).  Use this before `ENGAGE` to verify that
-engagement is legal.
+Sets the switch ON if both battlers share the same X/Y coordinate (regardless
+of Z).  Useful before deciding whether to ENGAGE.
 
 **Example:**
 ```
@@ -307,141 +298,127 @@ BATTLEFIELD SAME_ZONE a1 e0 5
 
 ### Entering a Z Group
 
-Z = 0 means the battler is free and unengaged.  A positive Z value (1, 2, 3, …)
-identifies an engagement group at a given cell.  All members of a group share
-the same `(x, y, z)` triple.
+Z = 0 means free.  A positive Z value (1, 2, 3, …) identifies an engagement
+group at a specific cell.
 
 When **A engages B**:
 
-1. If B is already in group Z = 1 at `(2, 3)`, A is added to that same group.
-2. If B is free, a new group number is allocated (the lowest unused integer for
-   that cell) and both A and B are placed in it.
-3. A's `engagedWith` pointer is set to B.  B's pointer is unchanged.
+1. If B is already in group Z = 1, A joins that group.
+2. If B is free, a new group number is allocated and both A and B enter it.
+3. A's `engagedWith` is set to B's key.  B's `engagedWith` is unchanged.
 
 ### Leaving a Z Group — Cascade Cleanup
 
 When a battler **disengages**:
 
-1. The battler is removed from the group (Z → 0, `engagedWith` → null).
-2. Any remaining group member whose `engagedWith` pointed at the departed
-   battler has that reference cleared (the link is broken, but they may stay
-   in the group if someone else still anchors them).
-3. The engine then checks every remaining member for a **reason to stay**:
-   - *Does this member actively engage someone still in the group?*
-     (their `engagedWith` target is still present)  **OR**
-   - *Is this member actively engaged by someone still in the group?*
-     (another member's `engagedWith` points at them)
-4. Any member with **no reason to stay** is ejected (Z → 0).  This can
-   trigger further ejections, so step 3–4 repeats until the group is
-   stable.
+1. They leave the group (Z → 0, `engagedWith` → null).
+2. Any remaining member whose `engagedWith` pointed at the departed battler
+   has that reference cleared.
+3. Each remaining member is checked for a **reason to stay**:
+   - They are actively engaging someone else in the group, **or**
+   - Someone else in the group is actively engaging them.
+4. Any member with no reason to stay is ejected.  This can cascade.
 
 ### Worked Examples
 
-**Two-way engagement, A disengages:**
+**Two-way: A disengages**
 
 | State | A | B |
 |-------|---|---|
-| Start | (1,1) Z=0 | (1,1) Z=0 |
-| A engages B | Z=1, engWith=B | Z=1, engWith=null |
+| A engages B | Z=1, engWith=B | Z=1 |
 | A disengages | Z=0 | B has no anchor → Z=0 |
 
-Both are free. ✓
+Both free. ✓
 
 ---
 
-**Three-way engagement, initiator disengages:**
+**Three-way: C joins, then A disengages**
 
 | State | A | B | C |
 |-------|---|---|---|
-| Start | (1,1) Z=0 | (1,1) Z=0 | (1,1) Z=0 |
-| A engages B | Z=1, engWith=B | Z=1, engWith=null | Z=0 |
+| A engages B | Z=1, engWith=B | Z=1 | Z=0 |
 | C engages A | Z=1 | Z=1 | Z=1, engWith=A |
-| A disengages | Z=0 | — | C.engWith cleared (A gone) |
-| Cleanup: B has no anchor → ejects | — | Z=0 | — |
-| Cleanup: C.engWith=null, nobody engages C → ejects | — | — | Z=0 |
+| A disengages | Z=0 | — | C.engWith cleared |
+| Cleanup: B no anchor → ejects | — | Z=0 | — |
+| Cleanup: C no anchor → ejects | — | — | Z=0 |
 
-Group fully dissolves. ✓
+All free. ✓
 
 ---
 
-**Three-way, two still anchored:**
+**Three-way: C joins B, then A disengages**
 
 | State | A | B | C |
 |-------|---|---|---|
-| A engages B | Z=1, engWith=B | Z=1, engWith=null | Z=0 |
+| A engages B | Z=1, engWith=B | Z=1 | Z=0 |
 | C engages B | Z=1 | Z=1 | Z=1, engWith=B |
 | A disengages | Z=0 | — | — |
-| Cleanup: B — C still engages B → stays | — | Z=1 | Z=1 |
-| Cleanup: C — engWith=B (still in group) → stays | — | Z=1 | Z=1 |
+| B: C still engages B → stays | — | Z=1 | Z=1 |
+| C: engWith=B (still present) → stays | — | Z=1 | Z=1 |
 
 B and C remain engaged. ✓
 
 ---
 
-**Pulled-in battler (B) disengages:**
-
-If B (who was pulled in by A) chooses to disengage:
-
-1. B leaves.
-2. A.engWith was B, so A.engWith is cleared.
-3. Cleanup: A now has no `engagedWith` and nobody is engaging A → A ejects.
-
-Group dissolves even though A was the original initiator. ✓
-
----
-
 ## Reading Position Data in Scripts / Conditional Branches
-
-Use the **Script** option in a Conditional Branch, or the `Script:` event
-command, to read position data directly.
 
 ```javascript
 // Actor 1's coordinates
-$gameActors.actor(1)._bfX   // X position
-$gameActors.actor(1)._bfY   // Y position
-$gameActors.actor(1)._bfZ   // 0 = free, >0 = engaged
+$gameActors.actor(1)._bfX        // X
+$gameActors.actor(1)._bfY        // Y
+$gameActors.actor(1)._bfZ        // 0 = free, >0 = engaged group
+$gameActors.actor(1).bfIsEngaged()  // boolean
 
-// Check if actor 1 is engaged
-$gameActors.actor(1).bfIsEngaged()  // returns true/false
-
-// Enemy at index 0 (first enemy in the troop)
+// Enemy at troop index 0
 $gameTroop.members()[0]._bfX
 
-// Get zone label/description for a cell
-$gameBattlefield.getZoneLabel(2, -1)
-$gameBattlefield.getZoneDesc(2, -1)
+// Zone data for a cell
+$gameBattlefield.getZoneLabel(0, 0)   // "Grassy Knoll" or null
+$gameBattlefield.getZoneDesc(0, 0)    // description or null
+$gameBattlefield.isValidZone(0, 0)    // true/false
+
+// Adjacent reachable zones (as used by PROMPT_MOVE)
+$gameBattlefield.adjacentValidZones(0, 0)
+// returns: [{x, y, label}, ...] sorted A-Z
 ```
 
 ---
 
 ## Typical Battle Setup Flow
 
-A recommended pattern for a battle that starts on map ID 5:
+A battle that takes place on map ID 5:
 
 ```
-◆ Battle Processing: ...
-  ──── (In battle-start Common Event or parallel process) ────
-  ◆ Plugin Command: BATTLEFIELD BOUNDS -3 3 -2 2
-  ◆ Plugin Command: BATTLEFIELD MAP_DESC 5 The docking bay. Crates are piled everywhere.
-  ◆ Plugin Command: BATTLEFIELD LABEL_MAP 5 -3 0 Entrance
-  ◆ Plugin Command: BATTLEFIELD LABEL_MAP 5  3 0 Cargo Hold
-  ◆ Plugin Command: BATTLEFIELD DESC_MAP 5 -3 0 The blast doors you entered through.
-  ◆ Plugin Command: BATTLEFIELD MOVE a1 -2 0
-  ◆ Plugin Command: BATTLEFIELD MOVE a2 -2 1
-  ◆ Plugin Command: BATTLEFIELD MOVE e0  2 0
-  ◆ Plugin Command: BATTLEFIELD MOVE e1  2 -1
+────  In a pre-battle Common Event or battle-start parallel event  ────
+
+◆ Plugin Command: BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll Open ground.
+◆ Plugin Command: BATTLEFIELD ZONE_MAP 5 0 1 Book Depository The shooter's nest.
+◆ Plugin Command: BATTLEFIELD ZONE_MAP 5 1 0 Public Road Bystanders everywhere.
+◆ Plugin Command: BATTLEFIELD ZONE_MAP 5 1 1 Overpass A concrete bridge.
+
+◆ Plugin Command: BATTLEFIELD MOVE a1 0 0      ← actor 1 starts at Grassy Knoll
+◆ Plugin Command: BATTLEFIELD MOVE a2 0 0      ← actor 2 starts at Grassy Knoll
+◆ Plugin Command: BATTLEFIELD MOVE e0 1 1      ← enemy 0 starts at Overpass
 ```
 
-Then during a turn, when actor 1 uses a "Charge" manoeuvre:
+When actor 1 uses a "Move" manoeuvre (via its Common Event):
 
 ```
-◆ Plugin Command: BATTLEFIELD MOVE a1 2 0
+◆ Plugin Command: BATTLEFIELD PROMPT_MOVE a1
+  → Player sees: "Book Depository, Public Road" (A-Z, adjacent to 0,0)
+  → Player picks "Public Road"
+  → Actor 1 moves to (1,0)
+```
+
+Then actor 1 uses a "Charge" action to engage enemy 0 (must move to same cell first):
+
+```
 ◆ Plugin Command: BATTLEFIELD SAME_ZONE a1 e0 10
 ◆ Conditional Branch: Switch #10 is ON
     ◆ Plugin Command: BATTLEFIELD ENGAGE a1 e0
 ```
 
-At the end of the encounter, or when actor 1 uses a "Break Away" skill:
+Later, actor 1 uses "Break Away":
 
 ```
 ◆ Plugin Command: BATTLEFIELD DISENGAGE a1
@@ -451,41 +428,36 @@ At the end of the encounter, or when actor 1 uses a "Break Away" skill:
 
 ## Complete Examples
 
-### Example 1 — Basic Skirmish
-
-Two allies vs. two enemies on a 7×7 grid.
+### Example 1 — Basic Encounter on Map 5
 
 ```
-BATTLEFIELD BOUNDS -3 3 -3 3
-BATTLEFIELD DEFAULT_DESC An open courtyard.
-BATTLEFIELD LABEL  0  0 Centre
-BATTLEFIELD DESC   0  0 The centre of the courtyard. Exposed on all sides.
-BATTLEFIELD LABEL  3  3 High Ground
-BATTLEFIELD DESC   3  3 A raised platform giving a clear view of the field.
-BATTLEFIELD MOVE a1 -2 0
-BATTLEFIELD MOVE a2 -2 1
-BATTLEFIELD MOVE e0  2 0
-BATTLEFIELD MOVE e1  2 1
-```
+# ── Setup ────────────────────────────────────────────────
+BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll      Open ground near the oak tree.
+BATTLEFIELD ZONE_MAP 5 0 1 Book Depository   Six-floor building, sixth floor.
+BATTLEFIELD ZONE_MAP 5 1 0 Public Road       A busy street. Civilians scatter.
+BATTLEFIELD ZONE_MAP 5 1 1 Overpass          A concrete bridge above the road.
 
-Actor 1 moves forward and engages enemy 0:
+# Place battlers
+BATTLEFIELD MOVE a1 0 0
+BATTLEFIELD MOVE a2 0 0
+BATTLEFIELD MOVE e0 1 1
+BATTLEFIELD MOVE e1 1 0
 
-```
-BATTLEFIELD MOVE a1 2 0
-BATTLEFIELD SAME_ZONE a1 e0 1
-◆ Conditional Branch: Switch #1 is ON
-    ◆ Plugin Command: BATTLEFIELD ENGAGE a1 e0
-```
+# ── During a turn ────────────────────────────────────────
+# Actor 1 moves (player chooses from adjacent declared zones):
+BATTLEFIELD PROMPT_MOVE a1
+#  → Shows:  Book Depository | Public Road | Overpass (sorted A–Z, Chebyshev ≤1)
 
-Check actor 1's position (store in variables 20–22):
+# Actor 1 ends up at 1,0 (Public Road) — same cell as e1
+BATTLEFIELD SAME_ZONE a1 e1 1
+# Conditional Branch: Switch 1 ON → engage
+BATTLEFIELD ENGAGE a1 e1
 
-```
+# Store actor 1's position for Show Text use
 BATTLEFIELD QUERY a1 20 21 22
-```
+#  Variable 20 = 1, Variable 21 = 0, Variable 22 = 1 (engaged)
 
-Actor 1 then breaks away:
-
-```
+# Later: actor 1 breaks away
 BATTLEFIELD DISENGAGE a1
 ```
 
@@ -494,23 +466,21 @@ BATTLEFIELD DISENGAGE a1
 ### Example 2 — Three-Way Engagement
 
 ```
-# Place all three battlers in the same cell so engagement is possible
-BATTLEFIELD MOVE a1  0  0
-BATTLEFIELD MOVE a2  0  0
-BATTLEFIELD MOVE e0  0  0
+# All three in the same cell
+BATTLEFIELD MOVE a1 0 0
+BATTLEFIELD MOVE a2 0 0
+BATTLEFIELD MOVE e0 0 0
 
-# a1 engages e0 — both enter group Z=1 at (0,0)
+# a1 engages e0 → group Z=1 at (0,0): a1(engWith=e0), e0
 BATTLEFIELD ENGAGE a1 e0
 
-# a2 moves to 0,0 (already there) and engages e0 — joins Z=1
+# a2 also engages e0 → joins Z=1: a1, e0, a2(engWith=e0)
 BATTLEFIELD ENGAGE a2 e0
 
-# Now (0,0,1): a1 (engWith=e0), e0 (engWith=null), a2 (engWith=e0)
-
 # a1 disengages.
-# e0: a2 still engages e0 → e0 stays.
-# a2: engWith=e0 (still present) → a2 stays.
-# Result: e0 and a2 remain engaged at (0,0,1).
+# e0: a2 still engages it → stays.
+# a2: engWith=e0 (still present) → stays.
+# Result: e0 and a2 remain at Z=1.
 BATTLEFIELD DISENGAGE a1
 ```
 
@@ -518,44 +488,49 @@ BATTLEFIELD DISENGAGE a1
 
 ## Save / Load Compatibility
 
-`$gameBattlefield` is written to the save file and restored on load.  The
-object's prototype is re-attached automatically so all methods continue to
-work after loading.  Battler field data (`_bfX`, `_bfY`, `_bfZ`,
-`_bfEngagedWith`) is stored as part of the normal actor/enemy save data.
+`$gameBattlefield` is written to the save file.  The object prototype is
+re-attached automatically on load, so all methods work after restoring a save.
+Battler field data (`_bfX`, `_bfY`, `_bfZ`, `_bfEngagedWith`) is stored as
+part of the normal actor/enemy save payload.
 
 ---
 
 ## FAQ
 
-**Q: Can an engaged battler engage someone else?**  
-A: No. An engaged battler (Z > 0) cannot initiate a new engagement. They must
-disengage first.
+**Q: What happens at the very start of a battle?**  
+A: All battlers are reset to `(0, 0)` when `Scene_Battle` starts.  Your
+battle-start Common Event should immediately call `BATTLEFIELD MOVE` to place
+everyone at their declared starting locations.
 
-**Q: Can an engaged battler be the *target* of a new engagement?**  
-A: Yes. Another free battler can move to the same cell and engage them, joining
-the existing Z group.
+**Q: Can `MOVE` place a battler at an undeclared coordinate?**  
+A: Yes.  `MOVE` is a designer/scripting tool with no validation.  `PROMPT_MOVE`
+is what enforces declared-zones-only movement for player characters.
 
-**Q: What if I call ENGAGE on battlers that are not in the same cell?**  
-A: The command is rejected with a console warning. Use `SAME_ZONE` / `QUERY` to
-confirm positions before engaging.
+**Q: What if a player character has no adjacent declared zones?**  
+A: `PROMPT_MOVE` detects this, skips the window, and lets the event continue
+immediately.  No movement occurs.
+
+**Q: Can an engaged battler use PROMPT_MOVE?**  
+A: No.  The command is skipped with a console warning if the battler is
+engaged.
 
 **Q: Do dead battlers retain their positions?**  
-A: Yes; the plugin does not watch for death. If you want dead battlers to be
-removed from engagement, call `BATTLEFIELD DISENGAGE` in the on-death event
-or skill effect via a Common Event.
+A: Yes.  The plugin does not watch for defeat.  If you want dead battlers
+removed from engagement, call `BATTLEFIELD DISENGAGE` in the on-defeat
+Common Event.
 
-**Q: Does the plugin show anything on screen?**  
-A: No. It is a data layer only. Displaying positions, describing zones, and
-showing engagement state is left entirely to your own messages, variables, and
-event logic.
+**Q: Does the plugin display anything visually?**  
+A: Only the destination-selection window (shown during `PROMPT_MOVE`).  Grid
+display, position indicators, and zone descriptions are your responsibility —
+use `QUERY` to read positions into variables and display them with Show Text.
 
-**Q: Zone labels/descriptions persist between battles — is that intentional?**  
-A: Yes. You set up zone labels for a map once (in a pre-battle Common Event or
-even directly in the event's "before battle" commands) and they remain for the
-lifetime of the save file. Battler *positions* are reset to `(0, 0)` at the
-start of every battle.
+**Q: Do declared zone data persist between battles?**  
+A: Yes.  Zone declarations (labels, descriptions) are stored in the save file
+and survive battle transitions.  Battler *positions* are reset at the start of
+each battle.  You only need to declare zones once per map (e.g. in the map's
+pre-battle setup event).
 
 **Q: Can I use this plugin alongside `NewCombat.js`?**  
-A: Yes. `BattlefieldMovement.js` does not touch the turn economy or the battle
-command menu. You can call movement and engagement commands from skills,
-manoeuvre effects, or dedicated Common Events.
+A: Yes.  `BattlefieldMovement.js` does not touch the turn economy or skill
+menus.  Attach `PROMPT_MOVE` to a "Move" manoeuvre skill's Common Event effect.
+

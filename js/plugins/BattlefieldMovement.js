@@ -1,126 +1,106 @@
 /*:
  * @target MV
  * @plugindesc Battlefield positioning and engagement system for combat.
- *             Gives every combatant (actors and enemies) an X/Y coordinate
- *             on a bounded grid.  A Z layer handles close-quarters engagement
- *             between entities that share the same X/Y position.
+ *             Valid coordinates are explicitly declared per map; players choose
+ *             destinations via an in-battle menu.  A Z layer handles
+ *             close-quarters engagement.
+ *
+ * ---------------------------------------------------------------------------
+ * QUICK START
+ * ---------------------------------------------------------------------------
+ * 1.  Before (or at the start of) a battle on map 5, declare every reachable
+ *     location with BATTLEFIELD LABEL_MAP or BATTLEFIELD ZONE_MAP:
+ *
+ *       BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll Open ground near the trees.
+ *       BATTLEFIELD ZONE_MAP 5 0 1 Book Depository A six-floor building.
+ *       BATTLEFIELD ZONE_MAP 5 1 0 Public Road A busy street.
+ *
+ * 2.  Place battlers at their starting location with BATTLEFIELD MOVE:
+ *
+ *       BATTLEFIELD MOVE a1 0 0
+ *       BATTLEFIELD MOVE e0 1 0
+ *
+ * 3.  To let a player character move interactively during battle, use:
+ *
+ *       BATTLEFIELD PROMPT_MOVE a1
+ *
+ *     This pauses the event, shows a window listing every declared zone
+ *     adjacent to actor 1's current position (sorted A-Z), waits for
+ *     the player to pick one, then resumes.
  *
  * ---------------------------------------------------------------------------
  * BATTLER KEYS
  * ---------------------------------------------------------------------------
- * Every plugin command that refers to a specific combatant uses a "battler
- * key" string:
- *
  *   a<N>   – actor whose database ID is N  (e.g. a1, a2, a3)
- *   e<N>   – enemy at troop index N (0-based) (e.g. e0, e1, e2)
+ *   e<N>   – enemy at troop index N, 0-based  (e.g. e0, e1, e2)
  *
  * ---------------------------------------------------------------------------
  * PLUGIN COMMANDS
  * ---------------------------------------------------------------------------
  *
+ *  BATTLEFIELD ZONE_MAP mapId x y name [description...]
+ *    Declare a valid zone for a specific map, giving it a name and an
+ *    optional longer description.  This is the primary way to define the
+ *    battlefield layout for a map.
+ *    Example:  BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll Open ground.
+ *
+ *  BATTLEFIELD ZONE x y name [description...]
+ *    Declare a zone globally (used when the current map has no override).
+ *    Example:  BATTLEFIELD ZONE 0 0 Central Plaza
+ *
  *  BATTLEFIELD MOVE battlerKey x y
- *    Move a battler to (x, y).  Blocked if the battler is engaged (Z > 0) or
- *    if the destination is outside the current bounds.
- *    Example:  BATTLEFIELD MOVE a1 2 -1
+ *    Force-place a battler at (x, y).  Blocked only if the battler is
+ *    engaged (Z > 0).  Use this for scripted / enemy-AI movement; no
+ *    player menu is shown.
+ *    Example:  BATTLEFIELD MOVE a1 0 0
+ *
+ *  BATTLEFIELD PROMPT_MOVE battlerKey
+ *    Show the player a menu of valid adjacent zones and wait for a choice.
+ *    Movement is applied automatically after selection.  Cancelled input
+ *    leaves the battler in place.  Blocked if the battler is engaged.
+ *    Example:  BATTLEFIELD PROMPT_MOVE a1
  *
  *  BATTLEFIELD ENGAGE attackerKey targetKey
- *    The attacker (must be Z=0) engages the target (any Z) at the same X/Y.
- *    Both are placed in the same Z group (the target's existing group, or a
- *    new one).  Engaged battlers cannot move on the X/Y axis.
+ *    The attacker (must be Z=0) engages the target at the same X/Y.
+ *    Both are placed in the same Z group.  Engaged battlers cannot move.
  *    Example:  BATTLEFIELD ENGAGE a1 e0
  *
  *  BATTLEFIELD DISENGAGE battlerKey
- *    Remove a battler from its Z group.  The cleanup graph then dissolves any
- *    remaining group members that have no surviving engagement reason
- *    (see README for full rules).
+ *    Remove a battler from its Z group; cascade-dissolves orphaned members.
  *    Example:  BATTLEFIELD DISENGAGE a1
  *
- *  BATTLEFIELD BOUNDS minX maxX minY maxY
- *    Override the movement boundaries for the current combat.
- *    Example:  BATTLEFIELD BOUNDS -3 3 -3 3
+ *  BATTLEFIELD LABEL_MAP mapId x y label_text...
+ *    Set (or update) the display name of a per-map zone.
+ *    Example:  BATTLEFIELD LABEL_MAP 5 1 0 Public Road
  *
- *  BATTLEFIELD LABEL x y label_text
- *    Set a global (all-maps) label for a coordinate.  Spaces in label_text
- *    are preserved (all remaining tokens are joined).
- *    Example:  BATTLEFIELD LABEL 0 0 The_Throne_Room
+ *  BATTLEFIELD LABEL x y label_text...
+ *    Set a global zone name (used when no per-map entry exists).
+ *    Example:  BATTLEFIELD LABEL 0 0 Central Plaza
  *
- *  BATTLEFIELD LABEL_MAP mapId x y label_text
- *    Set a per-map label that overrides the global one.
- *    Example:  BATTLEFIELD LABEL_MAP 3 1 1 Hangar_Bay_Alpha
+ *  BATTLEFIELD DESC_MAP mapId x y description_text...
+ *    Set (or update) the description of a per-map zone.
+ *    Example:  BATTLEFIELD DESC_MAP 5 0 1 A six-floor building.
  *
- *  BATTLEFIELD DESC x y description_text
- *    Set a global description for a coordinate.
- *    Example:  BATTLEFIELD DESC 0 0 The centre of the chamber.
- *
- *  BATTLEFIELD DESC_MAP mapId x y description_text
- *    Set a per-map description.
- *    Example:  BATTLEFIELD DESC_MAP 3 0 0 A vast hangar.
- *
- *  BATTLEFIELD DEFAULT_DESC description_text
- *    Set the global fallback description used when a coordinate has no
- *    specific description.
- *    Example:  BATTLEFIELD DEFAULT_DESC An open area.
- *
- *  BATTLEFIELD MAP_DESC mapId description_text
- *    Set a per-map fallback description.
- *    Example:  BATTLEFIELD MAP_DESC 3 The Death Star hangar.
+ *  BATTLEFIELD DESC x y description_text...
+ *    Set a global zone description.
+ *    Example:  BATTLEFIELD DESC 0 0 The centre of the plaza.
  *
  *  BATTLEFIELD QUERY battlerKey varX varY varZ
- *    Write the battler's current X, Y, Z into the three given variable IDs.
+ *    Write the battler's current X, Y, Z into three game variables.
  *    Example:  BATTLEFIELD QUERY a1 10 11 12
- *              (sets variable 10 = X, variable 11 = Y, variable 12 = Z)
  *
- *  BATTLEFIELD SAME_ZONE battlerKey otherKey switchId
- *    Set the switch to ON if both battlers share the same X/Y (Z=0 counts
- *    too; it just means they're in the same cell but not engaged).
+ *  BATTLEFIELD SAME_ZONE battlerKeyA battlerKeyB switchId
+ *    Set the switch ON if both battlers share the same X/Y coordinate.
  *    Example:  BATTLEFIELD SAME_ZONE a1 e0 5
  *
  * ---------------------------------------------------------------------------
- *
- * @param globalDefaultDesc
- * @text Global Default Zone Description
- * @desc Shown for any coordinate with no specific description.
- * @type string
- * @default An open area.
- *
- * @param defaultMinX
- * @text Default Min X
- * @desc Minimum X boundary applied at the start of every battle.
- * @type number
- * @min -9999
- * @default -3
- *
- * @param defaultMaxX
- * @text Default Max X
- * @type number
- * @max 9999
- * @default 3
- *
- * @param defaultMinY
- * @text Default Min Y
- * @type number
- * @min -9999
- * @default -3
- *
- * @param defaultMaxY
- * @text Default Max Y
- * @type number
- * @max 9999
- * @default 3
  */
 
 (function () {
     'use strict';
 
-    var params          = PluginManager.parameters('BattlefieldMovement');
-    var P_DEFAULT_DESC  = String(params.globalDefaultDesc  || 'An open area.');
-    var P_DEFAULT_MIN_X = parseInt(params.defaultMinX,  10) || -3;
-    var P_DEFAULT_MAX_X = parseInt(params.defaultMaxX,  10) ||  3;
-    var P_DEFAULT_MIN_Y = parseInt(params.defaultMinY,  10) || -3;
-    var P_DEFAULT_MAX_Y = parseInt(params.defaultMaxY,  10) ||  3;
-
     // -----------------------------------------------------------------------
-    // Game_Battlefield  –  central store, added to save data
+    // Game_Battlefield  –  central store, written to save data
     // -----------------------------------------------------------------------
 
     function Game_Battlefield() {
@@ -128,49 +108,44 @@
     }
 
     Game_Battlefield.prototype.initialize = function () {
-        // Movement boundaries (may be overridden per-combat via plugin cmd)
-        this.bounds = {
-            minX: P_DEFAULT_MIN_X,
-            maxX: P_DEFAULT_MAX_X,
-            minY: P_DEFAULT_MIN_Y,
-            maxY: P_DEFAULT_MAX_Y
-        };
-
         // The map that was active when the current combat started.
         this.currentMapId = null;
 
         // Zone metadata: "x,y" -> { label, desc }
-        this.zoneData     = {};          // global (all maps)
-        this.mapZoneData  = {};          // mapId -> { "x,y" -> {label,desc} }
-
-        // Fallback descriptions when a zone has no specific desc
-        this.globalDefaultDesc = P_DEFAULT_DESC;
-        this.mapDefaultDesc    = {};     // mapId -> string
+        this.zoneData    = {};   // global (all maps)
+        this.mapZoneData = {};   // mapId -> { "x,y" -> { label, desc } }
     };
 
-    // --- zone key helpers ---------------------------------------------------
+    // --- internal key -------------------------------------------------------
 
     Game_Battlefield.prototype._key = function (x, y) {
         return x + ',' + y;
     };
 
+    // --- zone data access ---------------------------------------------------
+
+    // Returns the label for (x,y) using per-map data first, global second.
+    // Returns null if the zone has not been declared at all.
     Game_Battlefield.prototype.getZoneLabel = function (x, y) {
         var key     = this._key(x, y);
         var mapData = this.currentMapId ? (this.mapZoneData[this.currentMapId] || {}) : {};
         if (mapData[key] && mapData[key].label) return mapData[key].label;
         if (this.zoneData[key] && this.zoneData[key].label) return this.zoneData[key].label;
-        return '(' + x + ', ' + y + ')';
+        return null;
     };
 
+    // Returns the description for (x,y), or null if none was set.
     Game_Battlefield.prototype.getZoneDesc = function (x, y) {
         var key     = this._key(x, y);
         var mapData = this.currentMapId ? (this.mapZoneData[this.currentMapId] || {}) : {};
         if (mapData[key] && mapData[key].desc) return mapData[key].desc;
         if (this.zoneData[key] && this.zoneData[key].desc) return this.zoneData[key].desc;
-        if (this.currentMapId && this.mapDefaultDesc[this.currentMapId]) {
-            return this.mapDefaultDesc[this.currentMapId];
-        }
-        return this.globalDefaultDesc;
+        return null;
+    };
+
+    // Returns true only if the zone has been explicitly declared.
+    Game_Battlefield.prototype.isValidZone = function (x, y) {
+        return this.getZoneLabel(x, y) !== null;
     };
 
     Game_Battlefield.prototype.setZoneLabel = function (x, y, label, mapId) {
@@ -197,11 +172,41 @@
         }
     };
 
-    // --- boundary check -----------------------------------------------------
+    // --- adjacency ----------------------------------------------------------
 
-    Game_Battlefield.prototype.isInBounds = function (x, y) {
-        return (x >= this.bounds.minX && x <= this.bounds.maxX &&
-                y >= this.bounds.minY && y <= this.bounds.maxY);
+    // Returns all declared zones within Chebyshev distance 1 of (x, y),
+    // excluding (x, y) itself, sorted alphabetically by label.
+    Game_Battlefield.prototype.adjacentValidZones = function (x, y) {
+        var self    = this;
+        var mapId   = this.currentMapId;
+        var mapData = mapId ? (this.mapZoneData[mapId] || {}) : {};
+        var seen    = {};
+        var result  = [];
+
+        function addIfAdjacent(key, entry) {
+            if (seen[key]) return;
+            var parts = key.split(',');
+            var zx    = parseInt(parts[0], 10);
+            var zy    = parseInt(parts[1], 10);
+            if (Math.abs(zx - x) <= 1 && Math.abs(zy - y) <= 1 && (zx !== x || zy !== y)) {
+                var label = entry.label;
+                if (label) {
+                    seen[key] = true;
+                    result.push({ x: zx, y: zy, label: label });
+                }
+            }
+        }
+
+        // Per-map zones for the current map take priority.
+        Object.keys(mapData).forEach(function (key) { addIfAdjacent(key, mapData[key]); });
+
+        // Global zones fill in anything not already covered.
+        Object.keys(self.zoneData).forEach(function (key) { addIfAdjacent(key, self.zoneData[key]); });
+
+        result.sort(function (a, b) {
+            return a.label.toLowerCase().localeCompare(b.label.toLowerCase());
+        });
+        return result;
     };
 
     // --- battler helpers ----------------------------------------------------
@@ -238,7 +243,7 @@
 
     // --- Z group helpers ----------------------------------------------------
 
-    // Find the next unused positive Z integer at the given X/Y cell.
+    // Next unused positive Z integer at the given X/Y cell.
     Game_Battlefield.prototype._nextZ = function (x, y) {
         var used = {};
         this.allBattlers().forEach(function (b) {
@@ -250,7 +255,7 @@
         return 1;
     };
 
-    // Return all battlers currently in a specific (x, y, z>0) group.
+    // All battlers in a specific (x, y, z>0) engagement group.
     Game_Battlefield.prototype.groupAt = function (x, y, z) {
         return this.allBattlers().filter(function (b) {
             return b._bfX === x && b._bfY === y && b._bfZ === z;
@@ -258,14 +263,6 @@
     };
 
     // --- ENGAGE -------------------------------------------------------------
-    //
-    //  Rules:
-    //    • attacker must be free (Z = 0) and at the same X/Y as the target
-    //    • if target is already in a Z group, attacker joins it
-    //    • otherwise a new Z group is created and both enter it
-    //    • attacker._bfEngagedWith is set to the target's battler key
-    //    • the target is pulled into the group but does not set engagedWith
-    //      (they were the object of engagement, not the initiator)
 
     Game_Battlefield.prototype.engage = function (attacker, target) {
         if (!attacker || !target) return false;
@@ -281,11 +278,9 @@
 
         var z;
         if (target._bfZ > 0) {
-            // Join the target's existing group
             z = target._bfZ;
         } else {
-            // Create a new group; pull target in
-            z          = this._nextZ(attacker._bfX, attacker._bfY);
+            z           = this._nextZ(attacker._bfX, attacker._bfY);
             target._bfZ = z;
         }
 
@@ -295,14 +290,6 @@
     };
 
     // --- DISENGAGE ----------------------------------------------------------
-    //
-    //  Rules:
-    //    1. The battler leaves its Z group (Z → 0, engagedWith → null).
-    //    2. Any other group member whose _bfEngagedWith pointed at the
-    //       departing battler has that reference cleared.
-    //    3. A cascade cleanup removes any remaining member that has neither
-    //       an active engagedWith target nor anyone actively engaging them.
-    //       This repeats until the group stabilises.
 
     Game_Battlefield.prototype.disengage = function (battler) {
         if (!battler || battler._bfZ === 0) return;
@@ -312,26 +299,23 @@
         var z   = battler._bfZ;
         var key = this.battlerKey(battler);
 
-        // Step 1: remove the battler
-        battler._bfZ          = 0;
+        battler._bfZ           = 0;
         battler._bfEngagedWith = null;
 
-        // Step 2: clear stale references to the departing battler
         this.allBattlers().forEach(function (b) {
             if (b._bfEngagedWith === key) b._bfEngagedWith = null;
         });
 
-        // Step 3: cascade cleanup
+        // Cascade: eject members with no remaining engagement reason.
         var changed = true;
         while (changed) {
             changed = false;
             var group = this.groupAt(x, y, z);
             for (var i = 0; i < group.length; i++) {
-                var e    = group[i];
-                var eKey = this.battlerKey(e);
+                var e        = group[i];
+                var eKey     = this.battlerKey(e);
                 var hasReason = false;
 
-                // Does e actively engage someone still in the group?
                 if (e._bfEngagedWith) {
                     var tgt = this.battlerFromKey(e._bfEngagedWith);
                     if (tgt && tgt._bfX === x && tgt._bfY === y && tgt._bfZ === z) {
@@ -339,7 +323,6 @@
                     }
                 }
 
-                // Is someone in the group actively engaging e?
                 if (!hasReason) {
                     for (var j = 0; j < group.length; j++) {
                         if (j !== i && group[j]._bfEngagedWith === eKey) {
@@ -350,10 +333,10 @@
                 }
 
                 if (!hasReason) {
-                    e._bfZ          = 0;
+                    e._bfZ           = 0;
                     e._bfEngagedWith = null;
                     changed = true;
-                    break;   // group changed; restart the scan
+                    break;
                 }
             }
         }
@@ -366,13 +349,12 @@
     var _Battler_initMembers = Game_Battler.prototype.initMembers;
     Game_Battler.prototype.initMembers = function () {
         _Battler_initMembers.call(this);
-        this._bfX          = 0;
-        this._bfY          = 0;
-        this._bfZ          = 0;   // 0 = free; >0 = engaged group index
+        this._bfX           = 0;
+        this._bfY           = 0;
+        this._bfZ           = 0;    // 0 = free; >0 = engaged group index
         this._bfEngagedWith = null; // battler key of the target this unit engaged
     };
 
-    // Convenience accessor so scripts can check engagement
     Game_Battler.prototype.bfIsEngaged = function () {
         return this._bfZ > 0;
     };
@@ -384,12 +366,13 @@
     var _Scene_Battle_start = Scene_Battle.prototype.start;
     Scene_Battle.prototype.start = function () {
         _Scene_Battle_start.call(this);
+        this._bfMoveSelectWindow = null;
         $gameBattlefield.currentMapId = $gameMap.mapId();
-        // Reset all battler positions; zone data is intentionally preserved
+        // Reset all battler positions; declared zone data is preserved.
         $gameBattlefield.allBattlers().forEach(function (b) {
-            b._bfX          = 0;
-            b._bfY          = 0;
-            b._bfZ          = 0;
+            b._bfX           = 0;
+            b._bfY           = 0;
+            b._bfZ           = 0;
             b._bfEngagedWith = null;
         });
     };
@@ -421,6 +404,118 @@
     };
 
     // -----------------------------------------------------------------------
+    // Interactive move-selection window
+    // -----------------------------------------------------------------------
+
+    // Shared state between the interpreter wait-mode and the scene window.
+    var _bfSelect = {
+        pending:   false,   // set by PROMPT_MOVE; cleared when window closes
+        battler:   null,    // the battler that is moving
+        completed: false    // set to true when the player has made (or cancelled) a choice
+    };
+
+    // ---- Window_BfMoveSelect -----------------------------------------------
+
+    function Window_BfMoveSelect() {
+        this.initialize.apply(this, arguments);
+    }
+
+    Window_BfMoveSelect.prototype = Object.create(Window_Command.prototype);
+    Window_BfMoveSelect.prototype.constructor = Window_BfMoveSelect;
+
+    Window_BfMoveSelect.prototype.initialize = function (choices) {
+        // Must be set before calling super (super calls makeCommandList).
+        this._bfChoices = choices || [];
+        var ww = this.windowWidth();
+        var wx = Math.floor((Graphics.boxWidth  - ww) / 2);
+        var wy = Math.floor((Graphics.boxHeight - this.windowHeight()) / 2);
+        Window_Command.prototype.initialize.call(this, wx, wy);
+    };
+
+    Window_BfMoveSelect.prototype.windowWidth = function () {
+        return 320;
+    };
+
+    Window_BfMoveSelect.prototype.numVisibleRows = function () {
+        return Math.min(this._bfChoices ? this._bfChoices.length : 1, 8);
+    };
+
+    Window_BfMoveSelect.prototype.makeCommandList = function () {
+        var self = this;
+        (this._bfChoices || []).forEach(function (c) {
+            // Store {x, y, label} in the ext slot so the OK handler can read it.
+            self.addCommand(c.label, 'goto', true, c);
+        });
+    };
+
+    // ---- Scene_Battle integration ------------------------------------------
+
+    var _Scene_Battle_update = Scene_Battle.prototype.update;
+    Scene_Battle.prototype.update = function () {
+        _Scene_Battle_update.call(this);
+        if (_bfSelect.pending && !this._bfMoveSelectWindow) {
+            this._bfCreateMoveWindow();
+        }
+    };
+
+    Scene_Battle.prototype._bfCreateMoveWindow = function () {
+        var battler = _bfSelect.battler;
+        var choices = $gameBattlefield.adjacentValidZones(battler._bfX, battler._bfY);
+
+        if (choices.length === 0) {
+            // No reachable declared zones — complete immediately with no move.
+            _bfSelect.pending   = false;
+            _bfSelect.completed = true;
+            return;
+        }
+
+        var win = new Window_BfMoveSelect(choices);
+        this._bfMoveSelectWindow = win;
+        this.addWindow(win);
+        win.setHandler('ok',     this._onBfMoveOk.bind(this));
+        win.setHandler('cancel', this._onBfMoveCancel.bind(this));
+        win.activate();
+        win.select(0);
+    };
+
+    Scene_Battle.prototype._bfCloseMoveWindow = function () {
+        if (this._bfMoveSelectWindow) {
+            this._windowLayer.removeChild(this._bfMoveSelectWindow);
+            this._bfMoveSelectWindow = null;
+        }
+        _bfSelect.pending   = false;
+        _bfSelect.completed = true;
+    };
+
+    Scene_Battle.prototype._onBfMoveOk = function () {
+        var data = this._bfMoveSelectWindow.currentExt();
+        if (data) {
+            _bfSelect.battler._bfX = data.x;
+            _bfSelect.battler._bfY = data.y;
+        }
+        this._bfCloseMoveWindow();
+    };
+
+    Scene_Battle.prototype._onBfMoveCancel = function () {
+        this._bfCloseMoveWindow();
+    };
+
+    // ---- Game_Interpreter wait-mode ----------------------------------------
+
+    var _updateWaitMode = Game_Interpreter.prototype.updateWaitMode;
+    Game_Interpreter.prototype.updateWaitMode = function () {
+        if (this._waitMode === 'bfMoveSelect') {
+            if (_bfSelect.completed) {
+                _bfSelect.completed = false;
+                this._waitMode = '';
+                return false; // done — let the interpreter continue
+            }
+            return true; // still waiting for player input
+        }
+        return _updateWaitMode.call(this);
+    };
+
+    // -----------------------------------------------------------------------
     // Plugin commands
     // -----------------------------------------------------------------------
 
@@ -433,21 +528,57 @@
 
         switch (sub) {
 
-            // ---- MOVE -------------------------------------------------------
+            // ---- ZONE_MAP (per-map declaration: name + optional desc) ------
+            // BATTLEFIELD ZONE_MAP mapId x y name [desc...]
+            case 'ZONE_MAP': {
+                var zmMapId = parseInt(args[1], 10);
+                var zmx     = parseInt(args[2], 10);
+                var zmy     = parseInt(args[3], 10);
+                // First token after coords is the name; the rest is the description.
+                var zmName  = args[4] || '';
+                var zmDesc  = args.slice(5).join(' ');
+                $gameBattlefield.setZoneLabel(zmx, zmy, zmName, zmMapId);
+                if (zmDesc) $gameBattlefield.setZoneDesc(zmx, zmy, zmDesc, zmMapId);
+                break;
+            }
+
+            // ---- ZONE (global declaration: name + optional desc) -----------
+            // BATTLEFIELD ZONE x y name [desc...]
+            case 'ZONE': {
+                var zx    = parseInt(args[1], 10);
+                var zy    = parseInt(args[2], 10);
+                var zName = args[3] || '';
+                var zDesc = args.slice(4).join(' ');
+                $gameBattlefield.setZoneLabel(zx, zy, zName, null);
+                if (zDesc) $gameBattlefield.setZoneDesc(zx, zy, zDesc, null);
+                break;
+            }
+
+            // ---- MOVE (programmatic / force placement) ----------------------
             // BATTLEFIELD MOVE battlerKey x y
             case 'MOVE': {
                 var moveBattler = $gameBattlefield.battlerFromKey(args[1]);
                 if (!moveBattler) { console.warn('BattlefieldMovement MOVE: battler not found: ' + args[1]); break; }
                 if (moveBattler._bfZ !== 0) { console.warn('BattlefieldMovement MOVE: battler is engaged and cannot move.'); break; }
-                var mx = parseInt(args[2], 10);
-                var my = parseInt(args[3], 10);
-                if (!$gameBattlefield.isInBounds(mx, my)) { console.warn('BattlefieldMovement MOVE: (' + mx + ',' + my + ') is outside bounds.'); break; }
-                moveBattler._bfX = mx;
-                moveBattler._bfY = my;
+                moveBattler._bfX = parseInt(args[2], 10);
+                moveBattler._bfY = parseInt(args[3], 10);
                 break;
             }
 
-            // ---- ENGAGE -----------------------------------------------------
+            // ---- PROMPT_MOVE (interactive player choice) -------------------
+            // BATTLEFIELD PROMPT_MOVE battlerKey
+            case 'PROMPT_MOVE': {
+                var pmBattler = $gameBattlefield.battlerFromKey(args[1]);
+                if (!pmBattler) { console.warn('BattlefieldMovement PROMPT_MOVE: battler not found: ' + args[1]); break; }
+                if (pmBattler._bfZ !== 0) { console.warn('BattlefieldMovement PROMPT_MOVE: battler is engaged and cannot move.'); break; }
+                _bfSelect.pending   = true;
+                _bfSelect.battler   = pmBattler;
+                _bfSelect.completed = false;
+                this.setWaitMode('bfMoveSelect');
+                break;
+            }
+
+            // ---- ENGAGE ----------------------------------------------------
             // BATTLEFIELD ENGAGE attackerKey targetKey
             case 'ENGAGE': {
                 var attacker = $gameBattlefield.battlerFromKey(args[1]);
@@ -458,7 +589,7 @@
                 break;
             }
 
-            // ---- DISENGAGE --------------------------------------------------
+            // ---- DISENGAGE -------------------------------------------------
             // BATTLEFIELD DISENGAGE battlerKey
             case 'DISENGAGE': {
                 var disengager = $gameBattlefield.battlerFromKey(args[1]);
@@ -467,74 +598,45 @@
                 break;
             }
 
-            // ---- BOUNDS -----------------------------------------------------
-            // BATTLEFIELD BOUNDS minX maxX minY maxY
-            case 'BOUNDS': {
-                $gameBattlefield.bounds.minX = parseInt(args[1], 10);
-                $gameBattlefield.bounds.maxX = parseInt(args[2], 10);
-                $gameBattlefield.bounds.minY = parseInt(args[3], 10);
-                $gameBattlefield.bounds.maxY = parseInt(args[4], 10);
-                break;
-            }
-
-            // ---- LABEL (global) --------------------------------------------
-            // BATTLEFIELD LABEL x y label_text...
-            case 'LABEL': {
-                var lx    = parseInt(args[1], 10);
-                var ly    = parseInt(args[2], 10);
-                var ltext = args.slice(3).join(' ');
-                $gameBattlefield.setZoneLabel(lx, ly, ltext, null);
-                break;
-            }
-
-            // ---- LABEL_MAP (per-map) ----------------------------------------
+            // ---- LABEL_MAP (update per-map zone name) ----------------------
             // BATTLEFIELD LABEL_MAP mapId x y label_text...
             case 'LABEL_MAP': {
                 var lmMapId = parseInt(args[1], 10);
                 var lmx     = parseInt(args[2], 10);
                 var lmy     = parseInt(args[3], 10);
-                var lmtext  = args.slice(4).join(' ');
-                $gameBattlefield.setZoneLabel(lmx, lmy, lmtext, lmMapId);
+                $gameBattlefield.setZoneLabel(lmx, lmy, args.slice(4).join(' '), lmMapId);
                 break;
             }
 
-            // ---- DESC (global) ---------------------------------------------
-            // BATTLEFIELD DESC x y description_text...
-            case 'DESC': {
-                var dx    = parseInt(args[1], 10);
-                var dy    = parseInt(args[2], 10);
-                var dtext = args.slice(3).join(' ');
-                $gameBattlefield.setZoneDesc(dx, dy, dtext, null);
+            // ---- LABEL (update global zone name) ---------------------------
+            // BATTLEFIELD LABEL x y label_text...
+            case 'LABEL': {
+                var lx = parseInt(args[1], 10);
+                var ly = parseInt(args[2], 10);
+                $gameBattlefield.setZoneLabel(lx, ly, args.slice(3).join(' '), null);
                 break;
             }
 
-            // ---- DESC_MAP (per-map) -----------------------------------------
+            // ---- DESC_MAP (update per-map zone description) ----------------
             // BATTLEFIELD DESC_MAP mapId x y description_text...
             case 'DESC_MAP': {
                 var dmMapId = parseInt(args[1], 10);
                 var dmx     = parseInt(args[2], 10);
                 var dmy     = parseInt(args[3], 10);
-                var dmtext  = args.slice(4).join(' ');
-                $gameBattlefield.setZoneDesc(dmx, dmy, dmtext, dmMapId);
+                $gameBattlefield.setZoneDesc(dmx, dmy, args.slice(4).join(' '), dmMapId);
                 break;
             }
 
-            // ---- DEFAULT_DESC (global fallback) ----------------------------
-            // BATTLEFIELD DEFAULT_DESC description_text...
-            case 'DEFAULT_DESC': {
-                $gameBattlefield.globalDefaultDesc = args.slice(1).join(' ');
+            // ---- DESC (update global zone description) ---------------------
+            // BATTLEFIELD DESC x y description_text...
+            case 'DESC': {
+                var dx = parseInt(args[1], 10);
+                var dy = parseInt(args[2], 10);
+                $gameBattlefield.setZoneDesc(dx, dy, args.slice(3).join(' '), null);
                 break;
             }
 
-            // ---- MAP_DESC (per-map fallback) --------------------------------
-            // BATTLEFIELD MAP_DESC mapId description_text...
-            case 'MAP_DESC': {
-                var mdMapId = parseInt(args[1], 10);
-                $gameBattlefield.mapDefaultDesc[mdMapId] = args.slice(2).join(' ');
-                break;
-            }
-
-            // ---- QUERY ------------------------------------------------------
+            // ---- QUERY -----------------------------------------------------
             // BATTLEFIELD QUERY battlerKey varX varY varZ
             case 'QUERY': {
                 var qb = $gameBattlefield.battlerFromKey(args[1]);
@@ -548,22 +650,25 @@
                 break;
             }
 
-            // ---- SAME_ZONE --------------------------------------------------
-            // BATTLEFIELD SAME_ZONE battlerKey otherKey switchId
+            // ---- SAME_ZONE -------------------------------------------------
+            // BATTLEFIELD SAME_ZONE battlerKeyA battlerKeyB switchId
             case 'SAME_ZONE': {
                 var szA  = $gameBattlefield.battlerFromKey(args[1]);
                 var szB  = $gameBattlefield.battlerFromKey(args[2]);
                 var szSw = parseInt(args[3], 10);
                 if (!szA || !szB) { console.warn('BattlefieldMovement SAME_ZONE: battler not found.'); break; }
-                var same = (szA._bfX === szB._bfX && szA._bfY === szB._bfY);
-                $gameSwitches.setValue(szSw, same);
+                $gameSwitches.setValue(szSw, szA._bfX === szB._bfX && szA._bfY === szB._bfY);
                 break;
             }
         }
     };
 
     // -----------------------------------------------------------------------
-    // Public global  (will be overwritten by DataManager.createGameObjects)
+    // Public global
+    // This initial value is superseded by DataManager.createGameObjects on
+    // every normal game start and by DataManager.extractSaveContents on load.
+    // It exists only so that any code that references $gameBattlefield before
+    // those hooks fire (e.g. during plugin loading) does not throw.
     // -----------------------------------------------------------------------
     /* global $gameBattlefield */
     var $gameBattlefield = new Game_Battlefield(); // jshint ignore:line
