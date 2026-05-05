@@ -12,8 +12,8 @@
  *   • Nothing chosen        → Action (white)    Manoeuvre (white)
  *   • Action taken          → Action (grey)     Manoeuvre (white)
  *   • 1 Manoeuvre taken     → Action (white)    Manoeuvre (white)
- *   • Action + 1 Manoeuvre  → Action (grey)     Manoeuvre (yellow, 2 MP; disabled if can't pay)
- *   • 2 Manoeuvres taken    → Action (yellow, 2 MP; disabled if can't pay)  Manoeuvre (grey)
+ *   • Action + 1 Manoeuvre  → Action (grey)     Manoeuvre (orange, 2 MP; disabled if can't pay)
+ *   • 2 Manoeuvres taken    → Action (orange, 2 MP; disabled if can't pay)  Manoeuvre (grey)
  *   • All three done        → Action (grey)     Manoeuvre (grey)
  *   • Incidental            → always available, white, no limit
  *
@@ -164,7 +164,7 @@
             aEnabled = false; aExt = null;              // already used – grey
         } else if (twoUsed) {                           // 2 manoeuvres taken; action is costly
             aEnabled = actor.mp >= STRAIN_MP_COST;
-            aExt     = 'yellow';
+            aExt     = 'orange';
         } else {
             aEnabled = true; aExt = null;
         }
@@ -175,7 +175,7 @@
             mEnabled = false; mExt = null;              // max manoeuvres – grey
         } else if (twoUsed) {                           // Action + 1 Manoeuvre taken; 2nd is costly
             mEnabled = actor.mp >= STRAIN_MP_COST;
-            mExt     = 'yellow';
+            mExt     = 'orange';
         } else {
             mEnabled = true; mExt = null;
         }
@@ -186,12 +186,12 @@
         this.addCommand('End Turn',   'endTurn',    true,     null);
     };
 
-    // Render entries that carry the 'yellow' ext tag in crisis/warning colour.
+    // Render entries that carry the 'orange' ext tag in crisis/warning colour.
     Window_ActorCommand.prototype.drawItem = function (index) {
         var rect = this.itemRectForText(index);
         this.resetTextColor();
         var ext = this._list[index] ? this._list[index].ext : null;
-        if (ext === 'yellow') {
+        if (ext === 'orange') {
             this.changeTextColor(this.crisisColor());
         }
         this.changePaintOpacity(this.isCommandEnabled(index));
