@@ -11,5 +11,6 @@ var $plugins =
 {"name":"SingleClickSelect","status":true,"description":"Confirms menu selection on first click/tap rather than requiring a second click.","parameters":{}},
 {"name":"InitialState","status":true,"description":"Applies state ID 12 (Standing) to all party members on new game or load.","parameters":{}},
 {"name":"AutoTargetSingleEnemy","status":true,"description":"Auto-targets the only enemy when a skill has scope 1 Enemy and one enemy remains.","parameters":{}},
-{"name":"HideSealedSkills","status":true,"description":"Hides skills sealed by a Seal Skill or Seal Skill Type trait from the skill list.","parameters":{}}
+{"name":"HideSealedSkills","status":true,"description":"Hides skills sealed by a Seal Skill or Seal Skill Type trait from the skill list.","parameters":{}},
+{"name":"BattleStatusBars","status":true,"description":"Dynamic HP/MP/TP bars with equal-width columns and always-visible value/max.","parameters":{}}
 ];
