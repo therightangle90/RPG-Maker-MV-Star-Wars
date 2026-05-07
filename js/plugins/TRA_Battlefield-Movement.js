@@ -127,6 +127,16 @@
 
     var BATTLEFIELD_DEBUG = _bfBoolParam(_bfParams.Debug);
 
+    function _bfLog(message) {
+        if (!BATTLEFIELD_DEBUG) return;
+        console.log('[TRA Battlefield Debug] ' + message);
+    }
+
+    function _bfWarn(message) {
+        if (!BATTLEFIELD_DEBUG) return;
+        console.warn('[TRA Battlefield Debug] ' + message);
+    }
+
     function _bfBattlerDisplayName(battler) {
         if (!battler) return 'Unknown';
         var key = $gameBattlefield ? $gameBattlefield.battlerKey(battler) : null;
@@ -134,17 +144,20 @@
         return (key || '?') + ':' + name + '(z=' + (battler._bfZ || 0) + ')';
     }
 
-    function _bfZoneSnapshotText() {
-        if (!$gameBattlefield) return '';
+    function _bfDeclaredZoneKeys() {
+        if (!$gameBattlefield) return [];
+        var zoneKeys = {};
         var mapId = $gameBattlefield.currentMapId;
         var mapData = mapId ? ($gameBattlefield.mapZoneData[mapId] || {}) : {};
-        var zoneKeys = {};
-
         Object.keys($gameBattlefield.zoneData || {}).forEach(function (k) { zoneKeys[k] = true; });
         Object.keys(mapData).forEach(function (k) { zoneKeys[k] = true; });
+        return Object.keys(zoneKeys).sort();
+    }
 
+    function _bfZoneSnapshotText() {
+        if (!$gameBattlefield) return '';
         var lines = [];
-        Object.keys(zoneKeys).sort().forEach(function (key) {
+        _bfDeclaredZoneKeys().forEach(function (key) {
             var parts = key.split(',');
             var x = parseInt(parts[0], 10);
             var y = parseInt(parts[1], 10);
@@ -161,10 +174,16 @@
     function _bfLogZoneSnapshot(scene) {
         if (!BATTLEFIELD_DEBUG) return;
         var text = _bfZoneSnapshotText();
-        if (!text) return;
+        var zoneCount = _bfDeclaredZoneKeys().length;
+        if (!text) {
+            if (scene && scene._bfLastDebugSnapshot === '__NO_ZONES__') return;
+            _bfWarn('Map ' + ($gameBattlefield.currentMapId || 0) + ' has no declared zones.');
+            if (scene) scene._bfLastDebugSnapshot = '__NO_ZONES__';
+            return;
+        }
         if (scene && scene._bfLastDebugSnapshot === text) return;
         if (scene) scene._bfLastDebugSnapshot = text;
-        console.log('[TRA Battlefield Debug] Map ' + ($gameBattlefield.currentMapId || 0) + '\n' + text);
+        _bfLog('Map ' + ($gameBattlefield.currentMapId || 0) + ' declared zones: ' + zoneCount + '\n' + text);
     }
 
     // -----------------------------------------------------------------------
@@ -437,6 +456,7 @@
         this._bfMoveSelectWindow = null;
         this._bfLastDebugSnapshot = '';
         $gameBattlefield.currentMapId = $gameMap.mapId();
+        _bfLog('Battle start on map ' + $gameBattlefield.currentMapId + '. Existing declared zones: ' + _bfDeclaredZoneKeys().length + '.');
         // Reset all battler positions; declared zone data is preserved.
         $gameBattlefield.allBattlers().forEach(function (b) {
             b._bfX           = 0;
@@ -532,10 +552,22 @@
 
     Scene_Battle.prototype._bfCreateMoveWindow = function () {
         var battler = _bfSelect.battler;
+        if (!battler) {
+            _bfWarn('Move prompt requested without a battler.');
+            _bfSelect.pending = false;
+            _bfSelect.completed = true;
+            return;
+        }
         var choices = $gameBattlefield.adjacentValidZones(battler._bfX, battler._bfY);
 
         if (choices.length === 0) {
             // No reachable declared zones — complete immediately with no move.
+            if (_bfDeclaredZoneKeys().length === 0) {
+                _bfWarn('No move prompt shown for ' + _bfBattlerDisplayName(battler) + ' because there are no declared zones for map ' + ($gameBattlefield.currentMapId || 0) + '.');
+            } else {
+                _bfWarn('No move prompt shown for ' + _bfBattlerDisplayName(battler) + ' at [' + battler._bfX + ',' + battler._bfY + '] because there are no adjacent declared zones.');
+                _bfLogZoneSnapshot(this);
+            }
             _bfSelect.pending   = false;
             _bfSelect.completed = true;
             return;
@@ -613,6 +645,7 @@
                 var zmDesc  = args.slice(5).join(' ');
                 $gameBattlefield.setZoneLabel(zmx, zmy, zmName, zmMapId);
                 if (zmDesc) $gameBattlefield.setZoneDesc(zmx, zmy, zmDesc, zmMapId);
+                _bfLog('Declared map zone [' + zmx + ',' + zmy + '] for map ' + zmMapId + ' with label "' + zmName + '".');
                 break;
             }
 
@@ -625,6 +658,7 @@
                 var zDesc = args.slice(4).join(' ');
                 $gameBattlefield.setZoneLabel(zx, zy, zName, null);
                 if (zDesc) $gameBattlefield.setZoneDesc(zx, zy, zDesc, null);
+                _bfLog('Declared global zone [' + zx + ',' + zy + '] with label "' + zName + '".');
                 break;
             }
 
@@ -636,6 +670,7 @@
                 if (moveBattler._bfZ !== 0) { console.warn('BattlefieldMovement MOVE: battler is engaged and cannot move.'); break; }
                 moveBattler._bfX = parseInt(args[2], 10);
                 moveBattler._bfY = parseInt(args[3], 10);
+                _bfLog('Moved ' + _bfBattlerDisplayName(moveBattler) + ' to [' + moveBattler._bfX + ',' + moveBattler._bfY + '].');
                 break;
             }
 
@@ -645,6 +680,11 @@
                 var pmBattler = $gameBattlefield.battlerFromKey(args[1]);
                 if (!pmBattler) { console.warn('BattlefieldMovement PROMPT_MOVE: battler not found: ' + args[1]); break; }
                 if (pmBattler._bfZ !== 0) { console.warn('BattlefieldMovement PROMPT_MOVE: battler is engaged and cannot move.'); break; }
+                if (!(SceneManager._scene instanceof Scene_Battle)) {
+                    _bfWarn('PROMPT_MOVE for ' + args[1] + ' was called outside Scene_Battle. Use this command from a troop event during battle.');
+                    break;
+                }
+                _bfLog('PROMPT_MOVE requested for ' + _bfBattlerDisplayName(pmBattler) + ' at [' + pmBattler._bfX + ',' + pmBattler._bfY + '].');
                 _bfSelect.pending   = true;
                 _bfSelect.battler   = pmBattler;
                 _bfSelect.completed = false;
