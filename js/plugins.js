@@ -4,13 +4,15 @@ var $plugins =
 [
 {"name":"Community_Basic","status":true,"description":"Basic plugin for manipulating important parameters.","parameters":{"cacheLimit":"20","screenWidth":"816","screenHeight":"624","changeWindowWidthTo":"","changeWindowHeightTo":"","renderingMode":"auto","alwaysDash":"off"}},
 {"name":"CustomLogo","status":true,"description":"Shows RPG Maker and user logos at the start of the game.","parameters":{"logo1":"","logo1ImageName":"MadeWithMv","logo1Skippable":"true","logo1Coordinate":"","logo1X":"408","logo1Y":"312","logo1Origin":"0.5","logo1Time":"","logo1FadeinFrames":"12","logo1FadeoutFrames":"12","logo1DurationFrames":"120","logo2":"","logo2ImageName":"","logo2Skippable":"true","logo2Coordinate":"","logo2X":"408","logo2Y":"312","logo2Origin":"0.5","logo2Time":"","logo2FadeinFrames":"12","logo2FadeoutFrames":"12","logo2DurationFrames":"120","logo3":"","logo3ImageName":"","logo3Skippable":"true","logo3Coordinate":"","logo3X":"408","logo3Y":"312","logo3Origin":"0.5","logo3Time":"","logo3FadeinFrames":"12","logo3FadeoutFrames":"12","logo3DurationFrames":"120","allowTotalSkip":"true"}},
-{"name":"SkipPrompt","status":true,"description":"","parameters":{}},
-{"name":"StarWarsDice","status":true,"description":"","parameters":{}},
-{"name":"Species","status":true,"description":"","parameters":{}},
-{"name":"NewCombat","status":true,"description":"Action / Manoeuvre / End Turn combat commands","parameters":{}},
-{"name":"SingleClickSelect","status":true,"description":"Confirms menu selection on first click/tap rather than requiring a second click.","parameters":{}},
-{"name":"InitialState","status":true,"description":"Applies state ID 12 (Standing) to all party members on new game or load.","parameters":{}},
-{"name":"AutoTargetSingleEnemy","status":true,"description":"Auto-targets the only enemy when a skill has scope 1 Enemy and one enemy remains.","parameters":{}},
-{"name":"HideSealedSkills","status":true,"description":"Hides skills sealed by a Seal Skill or Seal Skill Type trait from the skill list.","parameters":{}},
-{"name":"BattleStatusBars","status":true,"description":"Dynamic HP/MP/TP bars with equal-width columns and always-visible value/max.","parameters":{}}
+{"name":"TRA_Skip-Prompt","status":true,"description":"","parameters":{}},
+{"name":"TRA_Star-Wars-Dice","status":true,"description":"","parameters":{}},
+{"name":"TRA_Species","status":true,"description":"","parameters":{}},
+{"name":"TRA_Combat-Actions","status":true,"description":"Action / Manoeuvre / End Turn combat commands","parameters":{}},
+{"name":"TRA_Single-Click-Select","status":true,"description":"Confirms menu selection on first click/tap rather than requiring a second click.","parameters":{}},
+{"name":"TRA_Initial-State","status":true,"description":"Applies state ID 12 (Standing) to all party members on new game or load.","parameters":{}},
+{"name":"TRA_Auto-Target-Single-Enemy","status":true,"description":"Auto-targets the only enemy when a skill has scope 1 Enemy and one enemy remains.","parameters":{}},
+{"name":"TRA_Hide-Sealed-Skills","status":true,"description":"Hides skills sealed by a Seal Skill or Seal Skill Type trait from the skill list.","parameters":{}},
+{"name":"TRA_Battle-Status-Bars","status":true,"description":"Dynamic HP/MP/TP bars with equal-width columns and always-visible value/max.","parameters":{}},
+{"name":"TRA_Battlefield-Movement","status":true,"description":"Battlefield positioning and engagement system for combat.","parameters":{}},
+{"name":"TRA_Melee-Restriction","status":true,"description":"Seals attack while wielding melee element weapons and not engaged.","parameters":{}}
 ];
