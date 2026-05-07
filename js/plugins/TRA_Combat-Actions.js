@@ -3,6 +3,20 @@
  * @plugindesc Replaces standard combat commands with Action, Manoeuvre, Incidental, and End Turn.
  *             Selected skills execute immediately; the menu reappears after each execution.
  *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * Replaces the default turn-command flow with:
+ *   - Action
+ *   - Manoeuvre
+ *   - Incidental
+ *   - End Turn
+ *
+ * Selected skills execute immediately and control returns to the actor command
+ * menu until the player chooses End Turn.
+ *
  * Turn economy (actors and enemies):
  *   Free:   Action + Manoeuvre  OR  two Manoeuvres
  *   Costly: a third activity costs 2 MP (strain), deducted at the moment of execution

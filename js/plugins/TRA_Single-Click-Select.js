@@ -3,6 +3,17 @@
  * @plugindesc Single-click / single-tap selection: the first touch on a menu
  *             item confirms it immediately. The cursor highlight follows the
  *             mouse/cursor as it hovers over options.
+ *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * Improves menu interaction speed:
+ * - First click/tap on an item confirms it immediately.
+ * - Mouse hover updates the selected row without requiring a click.
+ *
+ * Keyboard and gamepad navigation remain unaffected.
  */
 
 (function () {
@@ -65,4 +76,3 @@
     };
 
 })();
-

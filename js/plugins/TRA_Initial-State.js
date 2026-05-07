@@ -2,6 +2,21 @@
  * @target MV
  * @plugindesc Applies state ID 12 (Standing) to every party member when a
  *             new game starts and when a save file is loaded.
+ *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * Ensures party actors always start in the expected baseline state by applying
+ * state 12 (Standing) after new game initialization and after loading a save.
+ *
+ * ============================================================================
+ * Notes
+ * ============================================================================
+ *
+ * - State ID is currently hardcoded to 12.
+ * - State is only added when missing; existing applications are not duplicated.
  */
 
 (function () {

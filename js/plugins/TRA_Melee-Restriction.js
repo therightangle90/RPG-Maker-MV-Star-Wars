@@ -4,6 +4,19 @@
  *             that carries the "Melee" Attack Element but are not currently
  *             engaged with any alive enemy on the battlefield.
  *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * This plugin enforces melee engagement:
+ * - If an actor is wielding a Melee attack-element weapon and is not engaged
+ *   with any alive enemy, their attack skill is sealed.
+ * - Once engagement is established (or melee weapon is unequipped), attack is
+ *   unsealed automatically.
+ *
+ * Works with TRA_Hide-Sealed-Skills.js so sealed attacks are hidden.
+ *
  * The seal is lifted automatically the moment the character becomes engaged
  * (BattlefieldMovement Z > 0 and at least one alive enemy shares that Z
  * group).  Switching to a non-Melee weapon also lifts the seal immediately.

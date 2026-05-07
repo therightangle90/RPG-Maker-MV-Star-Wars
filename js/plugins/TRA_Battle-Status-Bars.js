@@ -2,6 +2,23 @@
  * @target MV
  * @plugindesc Dynamic HP / MP / TP bars in the battle status window.
  *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * Replaces the default battle status gauges with evenly distributed bars that
+ * always show current and maximum values in a compact format.
+ *
+ * ============================================================================
+ * Features
+ * ============================================================================
+ *
+ * - Equal-width bar layout across available space.
+ * - Automatic 2-bar layout when TP display is disabled.
+ * - Fixed-size labels (HP/MP/TP) for readability.
+ * - Compact "current/max" values drawn right-aligned.
+ *
  * Columns are distributed evenly across the available gauge area.  If TP
  * display is disabled (System > Options) the space is split between HP and MP
  * only.  Every bar always shows "current / max".  The abbreviation label
@@ -115,4 +132,3 @@
     };
 
 })();
-

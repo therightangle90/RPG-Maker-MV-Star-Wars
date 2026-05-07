@@ -5,6 +5,17 @@
  *             destinations via an in-battle menu.  A Z layer handles
  *             close-quarters engagement.
  *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * This plugin adds battle-space positioning with:
+ * - declared valid zones per map
+ * - battler movement between adjacent zones
+ * - engagement groups using Z layers
+ * - plugin commands for setup and movement prompts
+ *
  * ---------------------------------------------------------------------------
  * QUICK START
  * ---------------------------------------------------------------------------

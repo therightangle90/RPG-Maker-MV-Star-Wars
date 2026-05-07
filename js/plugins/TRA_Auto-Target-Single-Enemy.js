@@ -3,6 +3,22 @@
  * @plugindesc When a skill targets 1 Enemy (scope 1) and there is only one
  *             alive enemy in the battle, the enemy is targeted automatically
  *             without showing the enemy-selection window.
+ *
+ * @help
+ * ============================================================================
+ * Introduction
+ * ============================================================================
+ *
+ * This plugin removes unnecessary target selection clicks when there is only
+ * one alive enemy and the selected skill targets exactly one enemy.
+ *
+ * ============================================================================
+ * Behavior
+ * ============================================================================
+ *
+ * - If alive enemy count is 1 and action scope is "1 Enemy", that enemy is
+ *   targeted immediately and action execution continues.
+ * - Otherwise, default enemy selection behavior is used.
  */
 
 (function () {
