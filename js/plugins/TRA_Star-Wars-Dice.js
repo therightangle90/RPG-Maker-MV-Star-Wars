@@ -106,7 +106,7 @@ var DiceSystem = (function () {
             { failure: 1, disadvantage: 1 },
             { failure: 2 },
             { failure: 2 },
-            { dispair: 1 }
+            { despair: 1 }
         ],
         force: [
             { light: 1 },
@@ -329,7 +329,7 @@ var DiceSystem = (function () {
             ' advantage:' + (result.total.advantage || 0) +
             ' disadvantage:' + (result.total.disadvantage || 0) +
             ' triumph:' + (result.total.triumph || 0) +
-            ' dispair:' + (result.total.dispair || 0);
+            ' despair:' + (result.total.despair || 0);
 
         console.log(header);
         console.log('[TRA Dice] Rolls: ' + detail);
