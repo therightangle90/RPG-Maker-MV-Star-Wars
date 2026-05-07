@@ -2,6 +2,12 @@
  * @target MV
  * @plugindesc Star Wars dice utilities plus melee attack debug pool rolls.
  *
+ * @param Debug
+ * @text Debug
+ * @desc When ON, logs dice pool composition and rolled faces whenever a pool is rolled.
+ * @type boolean
+ * @default false
+ *
  * @help
  * ============================================================================
  * Introduction
@@ -9,7 +15,7 @@
  *
  * This plugin provides:
  *   1) A global DiceSystem utility for rolling narrative dice.
- *   2) Automatic debug dice-pool output when a melee attack is launched.
+ *   2) Optional debug dice-pool output when pools are rolled.
  *
  * For melee attacks, the current temporary pool is:
  *   - Difficulty: 2
@@ -31,7 +37,7 @@
  * Melee Attack Debug Output
  * ============================================================================
  *
- * On each actor melee attack launch, this plugin logs:
+ * With Debug ON, on each actor melee attack launch this plugin logs:
  *   - attacker and target
  *   - dice pool composition
  *   - each die rolled and its face result
@@ -42,6 +48,15 @@
  */
 
 var DiceSystem = (function () {
+
+    var _params = PluginManager.parameters('TRA_Star-Wars-Dice');
+    if (!_params || Object.keys(_params).length === 0) {
+        _params = PluginManager.parameters('StarWarsDice');
+    }
+    function _boolParam(v) {
+        return String(v || '').toLowerCase() === 'true';
+    }
+    var DICE_DEBUG = _boolParam(_params.Debug);
 
     const dice = {
         boost: [
@@ -168,14 +183,24 @@ var DiceSystem = (function () {
 
     function rollPool(pool) {
         let allResults = [];
+        let typedRolls = [];
         Object.keys(pool).forEach(type => {
             for (let i = 0; i < pool[type]; i++) {
-                allResults.push(rollOne(type));
+                let face = rollOne(type);
+                typedRolls.push({
+                    type: type,
+                    result: Object.assign({}, face)
+                });
+                allResults.push(face);
             }
         });
+        let total = tally(allResults);
+        if (DICE_DEBUG) {
+            _logPoolDebug(pool, typedRolls, total);
+        }
         return {
             rolls: allResults,
-            total: tally(allResults)
+            total: total
         };
     }
 
@@ -192,11 +217,40 @@ var DiceSystem = (function () {
                 allResults.push(face);
             }
         });
-        return {
+        let result = {
             pool: Object.assign({}, pool),
             rolls: typedRolls,
             total: tally(allResults)
         };
+        if (DICE_DEBUG) {
+            _logPoolDebug(result.pool, result.rolls, result.total);
+        }
+        return result;
+    }
+
+    function _faceToText(face) {
+        var keys = Object.keys(face || {});
+        if (keys.length === 0) return 'blank';
+        return keys.map(function (k) {
+            return k + ':' + face[k];
+        }).join(', ');
+    }
+
+    function _logPoolDebug(pool, typedRolls, total) {
+        var poolText = Object.keys(pool).map(function (k) {
+            return k + ':' + pool[k];
+        }).join(', ');
+        var detail = typedRolls.map(function (r, i) {
+            return (i + 1) + ') ' + r.type + ' [' + _faceToText(r.result) + ']';
+        }).join(' | ');
+        console.log('[TRA Dice Debug] Pool ' + poolText);
+        console.log('[TRA Dice Debug] Rolls ' + detail);
+        console.log('[TRA Dice Debug] Totals success:' + (total.success || 0) +
+            ' failure:' + (total.failure || 0) +
+            ' advantage:' + (total.advantage || 0) +
+            ' disadvantage:' + (total.disadvantage || 0) +
+            ' triumph:' + (total.triumph || 0) +
+            ' despair:' + (total.despair || 0));
     }
 
     function rollDie(sides) {
@@ -232,6 +286,7 @@ var DiceSystem = (function () {
         tally,
         rollPool,
         rollPoolDetailed,
+        isDebugEnabled: function () { return DICE_DEBUG; },
         rollDie,
         rollDice,
         rollTotal,
@@ -331,11 +386,13 @@ var DiceSystem = (function () {
             ' triumph:' + (result.total.triumph || 0) +
             ' despair:' + (result.total.despair || 0);
 
-        console.log(header);
-        console.log('[TRA Dice] Rolls: ' + detail);
-        console.log(totals);
+        if (DiceSystem.isDebugEnabled()) {
+            console.log(header);
+            console.log('[TRA Dice] Rolls: ' + detail);
+            console.log(totals);
+        }
 
-        if (this._logWindow && this._logWindow.addText) {
+        if (DiceSystem.isDebugEnabled() && this._logWindow && this._logWindow.addText) {
             this._logWindow.addText(header);
             this._logWindow.addText(totals);
         }

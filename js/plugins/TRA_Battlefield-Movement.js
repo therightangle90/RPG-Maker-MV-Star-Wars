@@ -5,6 +5,12 @@
  *             destinations via an in-battle menu.  A Z layer handles
  *             close-quarters engagement.
  *
+ * @param Debug
+ * @text Debug
+ * @desc When ON, logs current battlefield zones and participants while the battlefield move screen is open.
+ * @type boolean
+ * @default false
+ *
  * @help
  * ============================================================================
  * Introduction
@@ -109,6 +115,57 @@
 
 (function () {
     'use strict';
+
+    var _bfParams = PluginManager.parameters('TRA_Battlefield-Movement');
+    if (!_bfParams || Object.keys(_bfParams).length === 0) {
+        _bfParams = PluginManager.parameters('BattlefieldMovement');
+    }
+
+    function _bfBoolParam(v) {
+        return String(v || '').toLowerCase() === 'true';
+    }
+
+    var BATTLEFIELD_DEBUG = _bfBoolParam(_bfParams.Debug);
+
+    function _bfBattlerDisplayName(battler) {
+        if (!battler) return 'Unknown';
+        var key = $gameBattlefield ? $gameBattlefield.battlerKey(battler) : null;
+        var name = battler.name ? battler.name() : 'Unknown';
+        return (key || '?') + ':' + name + '(z=' + (battler._bfZ || 0) + ')';
+    }
+
+    function _bfZoneSnapshotText() {
+        if (!$gameBattlefield) return '';
+        var mapId = $gameBattlefield.currentMapId;
+        var mapData = mapId ? ($gameBattlefield.mapZoneData[mapId] || {}) : {};
+        var zoneKeys = {};
+
+        Object.keys($gameBattlefield.zoneData || {}).forEach(function (k) { zoneKeys[k] = true; });
+        Object.keys(mapData).forEach(function (k) { zoneKeys[k] = true; });
+
+        var lines = [];
+        Object.keys(zoneKeys).sort().forEach(function (key) {
+            var parts = key.split(',');
+            var x = parseInt(parts[0], 10);
+            var y = parseInt(parts[1], 10);
+            var label = $gameBattlefield.getZoneLabel(x, y) || '(unnamed)';
+            var participants = $gameBattlefield.allBattlers().filter(function (b) {
+                return b && b.isAlive && b.isAlive() && b._bfX === x && b._bfY === y;
+            }).map(_bfBattlerDisplayName);
+            lines.push('[' + x + ',' + y + '] ' + label + ' => ' + (participants.length ? participants.join(', ') : '(none)'));
+        });
+
+        return lines.join('\n');
+    }
+
+    function _bfLogZoneSnapshot(scene) {
+        if (!BATTLEFIELD_DEBUG) return;
+        var text = _bfZoneSnapshotText();
+        if (!text) return;
+        if (scene && scene._bfLastDebugSnapshot === text) return;
+        if (scene) scene._bfLastDebugSnapshot = text;
+        console.log('[TRA Battlefield Debug] Map ' + ($gameBattlefield.currentMapId || 0) + '\n' + text);
+    }
 
     // -----------------------------------------------------------------------
     // Game_Battlefield  –  central store, written to save data
@@ -378,6 +435,7 @@
     Scene_Battle.prototype.start = function () {
         _Scene_Battle_start.call(this);
         this._bfMoveSelectWindow = null;
+        this._bfLastDebugSnapshot = '';
         $gameBattlefield.currentMapId = $gameMap.mapId();
         // Reset all battler positions; declared zone data is preserved.
         $gameBattlefield.allBattlers().forEach(function (b) {
@@ -467,6 +525,9 @@
         if (_bfSelect.pending && !this._bfMoveSelectWindow) {
             this._bfCreateMoveWindow();
         }
+        if (this._bfMoveSelectWindow) {
+            _bfLogZoneSnapshot(this);
+        }
     };
 
     Scene_Battle.prototype._bfCreateMoveWindow = function () {
@@ -487,6 +548,7 @@
         win.setHandler('cancel', this._onBfMoveCancel.bind(this));
         win.activate();
         win.select(0);
+        _bfLogZoneSnapshot(this);
     };
 
     Scene_Battle.prototype._bfCloseMoveWindow = function () {
@@ -504,6 +566,7 @@
             _bfSelect.battler._bfX = data.x;
             _bfSelect.battler._bfY = data.y;
         }
+        _bfLogZoneSnapshot(this);
         this._bfCloseMoveWindow();
     };
 
