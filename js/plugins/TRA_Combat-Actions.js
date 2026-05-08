@@ -17,6 +17,10 @@
  * Selected skills execute immediately and control returns to the actor command
  * menu until the player chooses End Turn.
  *
+ * When used with TRA_Battlefield-Movement, if a move prompt is cancelled
+ * (BATTLEFIELD PROMPT_MOVE cancel), the immediate action/manoeuvre spend for
+ * that selection is rolled back.
+ *
  * Turn economy (actors and enemies):
  *   Free:   Action + Manoeuvre  OR  two Manoeuvres
  *   Costly: a third activity costs 2 MP (strain), deducted at the moment of execution
@@ -250,6 +254,30 @@
     BattleManager._immediateActor         = null;
     BattleManager._returningFromImmediate = false;
     BattleManager._resumeInputAfterImmediateEvent = false;
+    BattleManager._immediateActionMeta = null;
+
+    BattleManager._captureImmediateMeta = function (meta) {
+        this._immediateActionMeta = meta || null;
+    };
+
+    BattleManager._consumeBattlefieldPromptCancel = function () {
+        if (!$gameTemp) return false;
+        var cancelled = !!$gameTemp._traBfPromptMoveCancelled;
+        $gameTemp._traBfPromptMoveCancelled = false;
+        return cancelled;
+    };
+
+    BattleManager._refundImmediateIfBattlefieldMoveCancelled = function () {
+        var actor = this._immediateActor;
+        var meta  = this._immediateActionMeta;
+        this._immediateActionMeta = null;
+        if (!actor || !meta || meta.isIncidental) return;
+        if (!this._consumeBattlefieldPromptCancel()) return;
+
+        actor._actionChosen   = !!meta.prevActionChosen;
+        actor._manoeuvreCount = meta.prevManoeuvreCount || 0;
+        if (meta.paidStrain) actor.gainMp(STRAIN_MP_COST);
+    };
 
     // Swap the actor's full action array for a single-entry array holding the
     // chosen slot, then hand control to the engine's 'turn' phase.
@@ -322,9 +350,12 @@
                     this._resumeInputAfterImmediateEvent = true;
                     this._phase = 'turn';
                 } else {
+                    this._refundImmediateIfBattlefieldMoveCancelled();
                     this._returningFromImmediate = true;
                     this._phase = 'input';
                 }
+            } else {
+                this._immediateActionMeta = null;
             }
             return;
         }
@@ -336,6 +367,7 @@
         if (this._resumeInputAfterImmediateEvent) {
             if (!this.updateEventMain()) {
                 this._resumeInputAfterImmediateEvent = false;
+                this._refundImmediateIfBattlefieldMoveCancelled();
                 this._returningFromImmediate = true;
                 this._phase = 'input';
             }
@@ -455,11 +487,15 @@
 
         // Incidentals are unlimited and never cost strain; skip tracking for them.
         var isIncidental = (slotIndex === INCIDENTAL_SLOT);
+        var paidStrain = false;
         if (!isIncidental) {
             // Third activity (Action after 2 Manoeuvres, or 2nd Manoeuvre after Action) costs strain.
             var isThird = (!aC && mC >= 2 && slotIndex === ACTION_SLOT) ||
                           (aC  && mC >= 1 && slotIndex !== ACTION_SLOT);
-            if (isThird) actor.gainMp(-STRAIN_MP_COST);
+            if (isThird) {
+                actor.gainMp(-STRAIN_MP_COST);
+                paidStrain = true;
+            }
 
             if (slotIndex === ACTION_SLOT) {
                 actor._actionChosen = true;
@@ -468,6 +504,12 @@
             }
         }
 
+        BattleManager._captureImmediateMeta({
+            isIncidental: isIncidental,
+            prevActionChosen: aC,
+            prevManoeuvreCount: mC,
+            paidStrain: paidStrain
+        });
         BattleManager.startImmediateAction(actor, slotIndex);
     };
 

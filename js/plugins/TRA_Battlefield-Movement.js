@@ -24,7 +24,7 @@
  * @param Proximity State Id
  * @type state
  * @default 0
- * @desc State applied while a battler is not engaged but is within 1 zone of an enemy. 0 disables.
+ * @desc State applied while a battler is not engaged but shares X/Y with an opposing battler. 0 disables.
  *
  * @help
  * ============================================================================
@@ -45,13 +45,13 @@
  *
  *     Map note format:
  *       <BATTLEFIELD_ZONES>
- *       0,0,Grassy Knoll | Open ground near the trees. | Low Light | Soft Cover
+ *       0,0,Grassy Knoll | Open ground near the trees. | Low Light, Soft Cover
  *       0,1,Book Depository | A six-floor building.
  *       1,0,Public Road | A busy street.
  *       </BATTLEFIELD_ZONES>
  *
  *     Segments in each line are separated by '|':
- *       x,y,Label | Description | Property One | Property Two | ...
+ *       x,y,Label | Description | Property One, Property Two, ...
  *
  *     Properties are arbitrary text strings (no restricted list).  Any number
  *     of properties can be appended after the description.
@@ -99,13 +99,13 @@
  * PLUGIN COMMANDS
  * ---------------------------------------------------------------------------
  *
- *  BATTLEFIELD ZONE_MAP mapId x y zone_label [| description [| prop1 [| prop2...]]]
+ *  BATTLEFIELD ZONE_MAP mapId x y zone_label [| description [| prop1, prop2, ...]]
  *    Declare a valid zone for a specific map, giving it a name, optional
  *    description, and any number of optional properties.
  *    Multi-word labels, descriptions, and property names are all supported.
- *    Example:  BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll | Open ground. | Low Light
+ *    Example:  BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll | Open ground. | Low Light, Soft Cover
  *
- *  BATTLEFIELD ZONE x y zone_label [| description [| prop1 [| prop2...]]]
+ *  BATTLEFIELD ZONE x y zone_label [| description [| prop1, prop2, ...]]
  *    Declare a zone globally (used when the current map has no override).
  *    Example:  BATTLEFIELD ZONE 0 0 Central Plaza | Busy marketplace. | Crowded
  *
@@ -113,12 +113,12 @@
  *    <BATTLEFIELD_ZONES>
  *      x,y,label
  *      x,y,label | description
- *      x,y,label | description | Property One | Property Two
+ *      x,y,label | description | Property One, Property Two
  *    </BATTLEFIELD_ZONES>
  *
  *    Optional single-line variant:
  *      <BATTLEFIELD_ZONE:x,y,label>
- *      <BATTLEFIELD_ZONE:x,y,label | description | Property One>
+ *      <BATTLEFIELD_ZONE:x,y,label | description | Property One, Property Two>
  *
  *  BATTLEFIELD ZONE_PROP x y property name words...
  *    Add a property to a global zone (will not overwrite existing properties).
@@ -316,27 +316,35 @@
         _bfLog('Map ' + ($gameBattlefield.currentMapId || 0) + ' zones (' + zoneCount + '):\n' + text);
     }
 
-    // Parse "label | desc | prop1 | prop2 ..." from a joined args string.
+    function _bfParsePropertyList(text) {
+        return String(text || '')
+            .split(',')
+            .map(function (s) { return s.trim(); })
+            .filter(function (s) { return s.length > 0; });
+    }
+
+    // Parse "label | desc | prop1, prop2, ..." from a joined args string.
     function _bfParseLabelDesc(args, startIndex) {
         var raw = args.slice(startIndex).join(' ').trim();
         if (!raw) return { label: '', desc: '', props: [] };
         var segments = raw.split('|').map(function (s) { return s.trim(); });
+        var propText = segments.slice(2).join(',');
         return {
             label: segments[0] || '',
             desc:  segments[1] || '',
-            props: segments.slice(2).filter(function (s) { return s.length > 0; })
+            props: _bfParsePropertyList(propText)
         };
     }
 
     // Parse a single zone line from a map note block:
-    //   x,y,label | description | prop1 | prop2 ...
+    //   x,y,label | description | prop1, prop2 ...
     function _bfParseNoteZoneLine(line) {
         var clean = String(line || '').trim();
         if (!clean || clean.charAt(0) === '#') return null;
         var segments = clean.split('|').map(function (s) { return s.trim(); });
         var left  = segments[0];
         var desc  = segments[1] || '';
-        var props = segments.slice(2).filter(function (s) { return s.length > 0; });
+        var props = _bfParsePropertyList(segments.slice(2).join(','));
         var parts = left.split(',');
         if (parts.length < 3) return null;
         var x = parseInt(parts[0], 10);
@@ -568,13 +576,13 @@
         });
     };
 
-    Game_Battlefield.prototype._bfHasNearbyEnemy = function (battler) {
+    Game_Battlefield.prototype._bfHasOpposedUnitInSameZone = function (battler) {
         if (!battler || !battler.isAlive || !battler.isAlive()) return false;
         return this.allBattlers().some(function (other) {
             if (!other || other === battler || !other.isAlive || !other.isAlive()) return false;
             if (other.isActor() === battler.isActor()) return false;
-            return Math.abs((other._bfX || 0) - (battler._bfX || 0)) <= 1 &&
-                   Math.abs((other._bfY || 0) - (battler._bfY || 0)) <= 1;
+            return (other._bfX || 0) === (battler._bfX || 0) &&
+                   (other._bfY || 0) === (battler._bfY || 0);
         });
     };
 
@@ -589,7 +597,7 @@
             });
             if (b._bfZ > 0) {
                 if (BATTLEFIELD_STATE_ENGAGED > 0) b.addState(BATTLEFIELD_STATE_ENGAGED);
-            } else if (self._bfHasNearbyEnemy(b)) {
+            } else if (self._bfHasOpposedUnitInSameZone(b)) {
                 if (BATTLEFIELD_STATE_PROXIMITY > 0) b.addState(BATTLEFIELD_STATE_PROXIMITY);
             } else if (BATTLEFIELD_STATE_DISENGAGED > 0) {
                 b.addState(BATTLEFIELD_STATE_DISENGAGED);
@@ -846,6 +854,7 @@
             _bfSelect.battler._bfX = data.x;
             _bfSelect.battler._bfY = data.y;
             $gameBattlefield.refreshRelationStates();
+            if ($gameTemp) $gameTemp._traBfPromptMoveCancelled = false;
             if (_bfSelect.cancelSwitchId > 0) $gameSwitches.setValue(_bfSelect.cancelSwitchId, false);
             _bfLog(_bfBattlerDisplayName(_bfSelect.battler) + ' moved to [' + data.x + ',' + data.y + '] (' + data.label + ').');
         }
@@ -855,6 +864,7 @@
 
     Scene_Battle.prototype._onBfMoveCancel = function () {
         _bfLog(_bfBattlerDisplayName(_bfSelect.battler) + ' cancelled move.');
+        if ($gameTemp) $gameTemp._traBfPromptMoveCancelled = true;
         if (_bfSelect.cancelSwitchId > 0) $gameSwitches.setValue(_bfSelect.cancelSwitchId, true);
         this._bfCloseMoveWindow();
     };
@@ -988,6 +998,7 @@
                     break;
                 }
                 _bfSelect.cancelSwitchId = args[2] ? parseInt(args[2], 10) : 0;
+                if ($gameTemp) $gameTemp._traBfPromptMoveCancelled = false;
                 _bfLog('PROMPT_MOVE for ' + _bfBattlerDisplayName(pmBattler) + ' at [' + pmBattler._bfX + ',' + pmBattler._bfY + ']' +
                     (_bfSelect.cancelSwitchId ? ' cancelSwitch=' + _bfSelect.cancelSwitchId : '') + '.');
                 _bfSelect.pending   = true;

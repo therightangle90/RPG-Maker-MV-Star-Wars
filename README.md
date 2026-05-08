@@ -21,13 +21,13 @@ Put this in the map note:
 
 ```text
 <BATTLEFIELD_ZONES>
-0,0,Grassy Knoll | Open ground near the trees. | Low Light | Soft Cover
+0,0,Grassy Knoll | Open ground near the trees. | Low Light, Soft Cover
 1,0,Public Road | A busy street.
 0,1,Book Depository | A six-floor building. | Elevated Position
 </BATTLEFIELD_ZONES>
 ```
 
-Zone lines follow the format:  `x,y,Label | Description | Property One | Property Two | …`
+Zone lines follow the format:  `x,y,Label | Description | Property One, Property Two, …`
 All segments after the description are **zone properties** (arbitrary text, no fixed list).
 
 Then use these plugin commands in a troop event:
@@ -53,6 +53,9 @@ After the command returns:
 
 Use a Conditional Branch on switch 5 immediately after to decide whether to
 refund or void the movement skill.
+
+If you are using `TRA_Combat-Actions`, cancelling `PROMPT_MOVE` now also rolls
+back the immediate manoeuvre/action consumption for that selection.
 
 ### Dynamic battler keys (variable substitution)
 
@@ -84,8 +87,8 @@ Zones can have any number of arbitrary text properties:
 ```text
 # In map notes:
 <BATTLEFIELD_ZONES>
-0,0,Grassy Knoll | Open ground. | Low Light | Dense Undergrowth
-0,1,Rooftop | High vantage point. | Elevated Position | Exposed
+0,0,Grassy Knoll | Open ground. | Low Light, Dense Undergrowth
+0,1,Rooftop | High vantage point. | Elevated Position, Exposed
 </BATTLEFIELD_ZONES>
 
 # Via plugin command (global zone):
@@ -112,7 +115,7 @@ You can configure three plugin parameters to apply states automatically:
 
 - **Engaged State Id** – applied while a battler is in an engagement (Z > 0)
 - **Disengaged State Id** – applied while not engaged and not near an enemy
-- **Proximity State Id** – applied while not engaged but within 1 zone of an enemy
+- **Proximity State Id** – applied while not engaged but sharing the same X/Y with an opposing battler
 
 Set any to `0` to disable that state assignment.
 
@@ -152,4 +155,3 @@ Each entry includes:
 - the dice pool composition
 - each die rolled and its face result
 - the final totals after cancellations
-
