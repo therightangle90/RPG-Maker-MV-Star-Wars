@@ -784,7 +784,7 @@
             }
             if (!this._bfDebugWindow._bfHidden) {
                 if (Input.isTriggered('shift') && this._bfDebugWindow.setMinimized(!this._bfDebugWindow._bfMinimized)) {
-                    _bfLog(this._bfDebugWindow._bfMinimized ? 'Debug shell minimised.' : 'Debug shell restored.');
+                    _bfLog(this._bfDebugWindow._bfMinimized ? 'Debug shell minimized.' : 'Debug shell restored.');
                 }
                 if (Input.isTriggered('pagedown') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows + 1)) {
                     this._bfDebugWindow._bfMinimized = (this._bfDebugWindow._bfRows === 1);
