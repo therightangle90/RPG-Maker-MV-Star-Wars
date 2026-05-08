@@ -25,12 +25,15 @@
  * ---------------------------------------------------------------------------
  * QUICK START
  * ---------------------------------------------------------------------------
- * 1.  Before (or at the start of) a battle on map 5, declare every reachable
- *     location with BATTLEFIELD LABEL_MAP or BATTLEFIELD ZONE_MAP:
+ * 1.  Declare reachable locations for a map either in map notes (recommended)
+ *     or with plugin commands.
  *
- *       BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll Open ground near the trees.
- *       BATTLEFIELD ZONE_MAP 5 0 1 Book Depository A six-floor building.
- *       BATTLEFIELD ZONE_MAP 5 1 0 Public Road A busy street.
+ *     Map note format:
+ *       <BATTLEFIELD_ZONES>
+ *       0,0,Grassy Knoll | Open ground near the trees.
+ *       0,1,Book Depository | A six-floor building.
+ *       1,0,Public Road | A busy street.
+ *       </BATTLEFIELD_ZONES>
  *
  * 2.  Place battlers at their starting location with BATTLEFIELD MOVE:
  *
@@ -55,15 +58,33 @@
  * PLUGIN COMMANDS
  * ---------------------------------------------------------------------------
  *
- *  BATTLEFIELD ZONE_MAP mapId x y name [description...]
+ *  BATTLEFIELD ZONE_MAP mapId x y zone_label [| description...]
  *    Declare a valid zone for a specific map, giving it a name and an
  *    optional longer description.  This is the primary way to define the
  *    battlefield layout for a map.
- *    Example:  BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll Open ground.
+ *    Multi-word labels are supported directly.
+ *    Use "|" to separate label and description.
+ *    Example:  BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll | Open ground.
  *
- *  BATTLEFIELD ZONE x y name [description...]
+ *  BATTLEFIELD ZONE x y zone_label [| description...]
  *    Declare a zone globally (used when the current map has no override).
+ *    Multi-word labels are supported directly.
+ *    Use "|" to separate label and description.
  *    Example:  BATTLEFIELD ZONE 0 0 Central Plaza
+ *
+ *  MAP NOTE TAGS (auto-loaded at battle start for the current map)
+ *    <BATTLEFIELD_ZONES>
+ *      x,y,label
+ *      x,y,label | description
+ *    </BATTLEFIELD_ZONES>
+ *
+ *    Optional single-line variant:
+ *      <BATTLEFIELD_ZONE:x,y,label>
+ *      <BATTLEFIELD_ZONE:x,y,label | description>
+ *
+ *  DEBUG SHELL CONTROLS (Debug parameter ON, during battle)
+ *    PageDown  - expand debug shell
+ *    PageUp    - contract debug shell
  *
  *  BATTLEFIELD MOVE battlerKey x y
  *    Force-place a battler at (x, y).  Blocked only if the battler is
@@ -195,6 +216,61 @@
         if (scene && scene._bfLastDebugSnapshot === text) return;
         if (scene) scene._bfLastDebugSnapshot = text;
         _bfLog('Map ' + ($gameBattlefield.currentMapId || 0) + ' declared zones: ' + zoneCount + '\n' + text);
+    }
+
+    function _bfParseLabelDesc(args, startIndex) {
+        var raw = args.slice(startIndex).join(' ').trim();
+        if (!raw) return { label: '', desc: '' };
+        var split = raw.indexOf('|');
+        if (split < 0) return { label: raw, desc: '' };
+        return {
+            label: raw.substring(0, split).trim(),
+            desc: raw.substring(split + 1).trim()
+        };
+    }
+
+    function _bfParseNoteZoneLine(line) {
+        var clean = String(line || '').trim();
+        if (!clean || clean.charAt(0) === '#') return null;
+        var split = clean.split('|');
+        var left = split.shift().trim();
+        var desc = split.join('|').trim();
+        var parts = left.split(',');
+        if (parts.length < 3) return null;
+        var x = parseInt(parts[0], 10);
+        var y = parseInt(parts[1], 10);
+        if (isNaN(x) || isNaN(y)) return null;
+        var label = parts.slice(2).join(',').trim();
+        if (!label) return null;
+        return { x: x, y: y, label: label, desc: desc };
+    }
+
+    function _bfLoadMapZonesFromNote(mapId) {
+        if (!$dataMap || !$dataMap.note) return 0;
+        var note = String($dataMap.note || '');
+        var count = 0;
+        var match;
+        var blockRe = /<BATTLEFIELD_ZONES>([\s\S]*?)<\/BATTLEFIELD_ZONES>/gi;
+        while ((match = blockRe.exec(note))) {
+            var lines = String(match[1] || '').split(/\r?\n/);
+            lines.forEach(function (line) {
+                var parsed = _bfParseNoteZoneLine(line);
+                if (!parsed) return;
+                $gameBattlefield.setZoneLabel(parsed.x, parsed.y, parsed.label, mapId);
+                if (parsed.desc) $gameBattlefield.setZoneDesc(parsed.x, parsed.y, parsed.desc, mapId);
+                count++;
+            });
+        }
+
+        var inlineRe = /<BATTLEFIELD_ZONE\s*:\s*([^>]+)>/gi;
+        while ((match = inlineRe.exec(note))) {
+            var inlineParsed = _bfParseNoteZoneLine(match[1]);
+            if (!inlineParsed) continue;
+            $gameBattlefield.setZoneLabel(inlineParsed.x, inlineParsed.y, inlineParsed.label, mapId);
+            if (inlineParsed.desc) $gameBattlefield.setZoneDesc(inlineParsed.x, inlineParsed.y, inlineParsed.desc, mapId);
+            count++;
+        }
+        return count;
     }
 
     // -----------------------------------------------------------------------
@@ -468,10 +544,12 @@
         this._bfDebugWindow = null;
         this._bfLastDebugSnapshot = '';
         $gameBattlefield.currentMapId = $gameMap.mapId();
+        var loadedFromNote = _bfLoadMapZonesFromNote($gameBattlefield.currentMapId);
         if (BATTLEFIELD_DEBUG) {
             this._bfDebugWindow = new Window_BfDebug();
             this.addWindow(this._bfDebugWindow);
             _bfLog('Debug overlay active.');
+            _bfLog('Loaded ' + loadedFromNote + ' battlefield zone declaration(s) from map note.');
         }
         _bfLog('Battle start on map ' + $gameBattlefield.currentMapId + '. Existing declared zones: ' + _bfDeclaredZoneKeys().length + '.');
         // Reset all battler positions; declared zone data is preserved.
@@ -565,13 +643,38 @@
 
     Window_BfDebug.prototype.initialize = function () {
         var ww = Math.min(760, Graphics.boxWidth - 16);
-        var wh = this.fittingHeight(5);
+        var wh = this.fittingHeight(8);
         var wx = 8;
         var wy = 8;
         Window_Base.prototype.initialize.call(this, wx, wy, ww, wh);
-        this.opacity = 200;
+        this._bfRows = 8;
+        this._bfMinRows = 3;
+        this._bfMaxRows = 20;
+        this.opacity = 255;
+        this.backOpacity = 255;
         this._bfSeenVersion = -1;
         this.refresh();
+    };
+
+    Window_BfDebug.prototype.standardBackOpacity = function () {
+        return 255;
+    };
+
+    Window_BfDebug.prototype._bfClampRows = function (rows) {
+        var maxRowsByScreen = Math.max(this._bfMinRows, Math.floor((Graphics.boxHeight - 16) / this.lineHeight()) - 1);
+        var hardMax = Math.min(this._bfMaxRows, maxRowsByScreen);
+        return Math.max(this._bfMinRows, Math.min(hardMax, rows));
+    };
+
+    Window_BfDebug.prototype.setRows = function (rows) {
+        var nextRows = this._bfClampRows(rows);
+        if (nextRows === this._bfRows) return false;
+        this._bfRows = nextRows;
+        var newHeight = this.fittingHeight(this._bfRows);
+        this.move(this.x, this.y, this.width, newHeight);
+        this.createContents();
+        this.refresh();
+        return true;
     };
 
     Window_BfDebug.prototype.refresh = function () {
@@ -593,6 +696,13 @@
         _Scene_Battle_update.call(this);
         if (BATTLEFIELD_DEBUG && this._bfDebugWindow && this._bfDebugWindow._bfSeenVersion !== _bfDebugVersion) {
             this._bfDebugWindow.refresh();
+        }
+        if (BATTLEFIELD_DEBUG && this._bfDebugWindow) {
+            if (Input.isTriggered('pagedown') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows + 1)) {
+                _bfLog('Debug shell expanded to ' + this._bfDebugWindow._bfRows + ' rows.');
+            } else if (Input.isTriggered('pageup') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows - 1)) {
+                _bfLog('Debug shell contracted to ' + this._bfDebugWindow._bfRows + ' rows.');
+            }
         }
         if (_bfSelect.pending && !this._bfMoveSelectWindow) {
             this._bfCreateMoveWindow();
@@ -686,28 +796,29 @@
 
         switch (sub) {
 
-            // ---- ZONE_MAP (per-map declaration: name + optional desc) ------
-            // BATTLEFIELD ZONE_MAP mapId x y name [desc...]
+            // ---- ZONE_MAP (per-map declaration: label + optional desc) ------
+            // BATTLEFIELD ZONE_MAP mapId x y label words... [| desc words...]
             case 'ZONE_MAP': {
                 var zmMapId = parseInt(args[1], 10);
                 var zmx     = parseInt(args[2], 10);
                 var zmy     = parseInt(args[3], 10);
-                // First token after coords is the name; the rest is the description.
-                var zmName  = args[4] || '';
-                var zmDesc  = args.slice(5).join(' ');
+                var zmText  = _bfParseLabelDesc(args, 4);
+                var zmName  = zmText.label;
+                var zmDesc  = zmText.desc;
                 $gameBattlefield.setZoneLabel(zmx, zmy, zmName, zmMapId);
                 if (zmDesc) $gameBattlefield.setZoneDesc(zmx, zmy, zmDesc, zmMapId);
                 _bfLog('Declared map zone [' + zmx + ',' + zmy + '] for map ' + zmMapId + ' with label "' + zmName + '".');
                 break;
             }
 
-            // ---- ZONE (global declaration: name + optional desc) -----------
-            // BATTLEFIELD ZONE x y name [desc...]
+            // ---- ZONE (global declaration: label + optional desc) -----------
+            // BATTLEFIELD ZONE x y label words... [| desc words...]
             case 'ZONE': {
                 var zx    = parseInt(args[1], 10);
                 var zy    = parseInt(args[2], 10);
-                var zName = args[3] || '';
-                var zDesc = args.slice(4).join(' ');
+                var zText = _bfParseLabelDesc(args, 3);
+                var zName = zText.label;
+                var zDesc = zText.desc;
                 $gameBattlefield.setZoneLabel(zx, zy, zName, null);
                 if (zDesc) $gameBattlefield.setZoneDesc(zx, zy, zDesc, null);
                 _bfLog('Declared global zone [' + zx + ',' + zy + '] with label "' + zName + '".');
