@@ -249,6 +249,7 @@
     BattleManager._immediateMode          = false;
     BattleManager._immediateActor         = null;
     BattleManager._returningFromImmediate = false;
+    BattleManager._resumeInputAfterImmediateEvent = false;
 
     // Swap the actor's full action array for a single-entry array holding the
     // chosen slot, then hand control to the engine's 'turn' phase.
@@ -308,15 +309,34 @@
             this._logWindow.endAction(this._subject);
             this._finishImmediate();
             this._immediateMode = false;
+            this._resumeInputAfterImmediateEvent = false;
             // If the action ended the battle let the engine handle victory/defeat.
             // Otherwise return control to the player's command menu.
             if (!this.checkBattleEnd()) {
+                if ($gameTemp.isCommonEventReserved()) {
+                    this._resumeInputAfterImmediateEvent = true;
+                    this._phase = 'turn';
+                } else {
+                    this._returningFromImmediate = true;
+                    this._phase = 'input';
+                }
+            }
+            return;
+        }
+        _orig_BM_endAction.call(this);
+    };
+
+    var _orig_BM_updateTurn = BattleManager.updateTurn;
+    BattleManager.updateTurn = function () {
+        if (this._resumeInputAfterImmediateEvent) {
+            if (!this.updateEventMain()) {
+                this._resumeInputAfterImmediateEvent = false;
                 this._returningFromImmediate = true;
                 this._phase = 'input';
             }
             return;
         }
-        _orig_BM_endAction.call(this);
+        _orig_BM_updateTurn.call(this);
     };
 
     // -----------------------------------------------------------------------

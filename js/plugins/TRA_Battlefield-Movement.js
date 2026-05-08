@@ -85,6 +85,7 @@
  *  DEBUG SHELL CONTROLS (Debug parameter ON, during battle)
  *    PageDown  - expand debug shell
  *    PageUp    - contract debug shell
+ *    Tab       - hide/unhide debug shell
  *
  *  BATTLEFIELD MOVE battlerKey x y
  *    Force-place a battler at (x, y).  Blocked only if the battler is
@@ -650,6 +651,7 @@
         this._bfRows = 8;
         this._bfMinRows = 3;
         this._bfMaxRows = 20;
+        this._bfHidden = false;
         this.opacity = 255;
         this.backOpacity = 255;
         this._bfSeenVersion = -1;
@@ -677,6 +679,14 @@
         return true;
     };
 
+    Window_BfDebug.prototype.setHidden = function (hidden) {
+        var nextHidden = !!hidden;
+        if (nextHidden === this._bfHidden) return false;
+        this._bfHidden = nextHidden;
+        this.visible = !nextHidden;
+        return true;
+    };
+
     Window_BfDebug.prototype.refresh = function () {
         this.contents.clear();
         var pad = this.textPadding();
@@ -698,10 +708,15 @@
             this._bfDebugWindow.refresh();
         }
         if (BATTLEFIELD_DEBUG && this._bfDebugWindow) {
-            if (Input.isTriggered('pagedown') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows + 1)) {
-                _bfLog('Debug shell expanded to ' + this._bfDebugWindow._bfRows + ' rows.');
-            } else if (Input.isTriggered('pageup') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows - 1)) {
-                _bfLog('Debug shell contracted to ' + this._bfDebugWindow._bfRows + ' rows.');
+            if (Input.isTriggered('tab') && this._bfDebugWindow.setHidden(!this._bfDebugWindow._bfHidden)) {
+                _bfLog(this._bfDebugWindow._bfHidden ? 'Debug shell hidden.' : 'Debug shell shown.');
+            }
+            if (!this._bfDebugWindow._bfHidden) {
+                if (Input.isTriggered('pagedown') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows + 1)) {
+                    _bfLog('Debug shell expanded to ' + this._bfDebugWindow._bfRows + ' rows.');
+                } else if (Input.isTriggered('pageup') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows - 1)) {
+                    _bfLog('Debug shell contracted to ' + this._bfDebugWindow._bfRows + ' rows.');
+                }
             }
         }
         if (_bfSelect.pending && !this._bfMoveSelectWindow) {

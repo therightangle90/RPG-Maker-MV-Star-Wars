@@ -63,6 +63,7 @@ When **Debug** is enabled, the plugin logs:
 
 - `PageDown`: expand debug shell
 - `PageUp`: contract debug shell
+- `Tab`: hide/unhide debug shell
 - The shell uses a solid black background for readability.
 
 If you do not see the move prompt, turn **Debug** on and watch the on-screen debug window first, then check the browser console.
