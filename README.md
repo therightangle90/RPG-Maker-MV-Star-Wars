@@ -45,6 +45,16 @@ BATTLEFIELD PROMPT_MOVE a1
 - `ZONE_MAP` / `ZONE` now support multi-word labels directly. Use `|` only when you also want to set description in the same command.
   - Example: `BATTLEFIELD ZONE_MAP 5 0 0 Grassy Knoll | Open ground near trees`
 
+### Optional battlefield relation states
+
+You can configure three plugin parameters to apply states automatically:
+
+- **Engaged State Id**
+- **Disengaged State Id**
+- **Proximity State Id**
+
+Set any of them to `0` to disable that state assignment.
+
 ### What Debug mode logs
 
 When **Debug** is enabled, the plugin logs:
@@ -62,7 +72,8 @@ When **Debug** is enabled, the plugin logs:
 ### Debug shell controls (during battle)
 
 - `PageDown`: expand debug shell
-- `PageUp`: contract debug shell
+- `PageUp`: contract debug shell (down to 1 line)
+- `Shift`: toggle minimised/full
 - `Tab`: hide/unhide debug shell
 - The shell uses a solid black background for readability.
 

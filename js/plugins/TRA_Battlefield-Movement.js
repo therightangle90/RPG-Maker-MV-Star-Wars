@@ -11,6 +11,21 @@
  * @type boolean
  * @default false
  *
+ * @param Engaged State Id
+ * @type state
+ * @default 0
+ * @desc State applied while a battler is engaged (Z > 0). 0 disables.
+ *
+ * @param Disengaged State Id
+ * @type state
+ * @default 0
+ * @desc State applied while a battler is not engaged and not near an enemy. 0 disables.
+ *
+ * @param Proximity State Id
+ * @type state
+ * @default 0
+ * @desc State applied while a battler is not engaged but is within 1 zone of an enemy. 0 disables.
+ *
  * @help
  * ============================================================================
  * Introduction
@@ -84,7 +99,8 @@
  *
  *  DEBUG SHELL CONTROLS (Debug parameter ON, during battle)
  *    PageDown  - expand debug shell
- *    PageUp    - contract debug shell
+ *    PageUp    - contract debug shell (down to 1 line)
+ *    Shift     - toggle minimised/full
  *    Tab       - hide/unhide debug shell
  *
  *  BATTLEFIELD MOVE battlerKey x y
@@ -147,7 +163,15 @@
         return String(v || '').toLowerCase() === 'true';
     }
 
+    function _bfIntParam(v) {
+        var n = parseInt(v || 0, 10);
+        return isNaN(n) ? 0 : Math.max(0, n);
+    }
+
     var BATTLEFIELD_DEBUG = _bfBoolParam(_bfParams.Debug);
+    var BATTLEFIELD_STATE_ENGAGED = _bfIntParam(_bfParams['Engaged State Id']);
+    var BATTLEFIELD_STATE_DISENGAGED = _bfIntParam(_bfParams['Disengaged State Id']);
+    var BATTLEFIELD_STATE_PROXIMITY = _bfIntParam(_bfParams['Proximity State Id']);
     var _bfDebugLines = ['Debug ON: waiting for battlefield events...'];
     var _bfDebugVersion = 0;
 
@@ -437,6 +461,35 @@
         });
     };
 
+    Game_Battlefield.prototype._bfHasNearbyEnemy = function (battler) {
+        if (!battler || !battler.isAlive || !battler.isAlive()) return false;
+        return this.allBattlers().some(function (other) {
+            if (!other || other === battler || !other.isAlive || !other.isAlive()) return false;
+            if (other.isActor() === battler.isActor()) return false;
+            return Math.abs((other._bfX || 0) - (battler._bfX || 0)) <= 1 &&
+                   Math.abs((other._bfY || 0) - (battler._bfY || 0)) <= 1;
+        });
+    };
+
+    Game_Battlefield.prototype.refreshRelationStates = function () {
+        var self = this;
+        var ids = [BATTLEFIELD_STATE_ENGAGED, BATTLEFIELD_STATE_DISENGAGED, BATTLEFIELD_STATE_PROXIMITY]
+            .filter(function (id, index, arr) { return id > 0 && arr.indexOf(id) === index; });
+        this.allBattlers().forEach(function (b) {
+            if (!b || !b.isAlive || !b.isAlive()) return;
+            ids.forEach(function (id) {
+                if (b.isStateAffected(id)) b.removeState(id);
+            });
+            if (b._bfZ > 0) {
+                if (BATTLEFIELD_STATE_ENGAGED > 0) b.addState(BATTLEFIELD_STATE_ENGAGED);
+            } else if (self._bfHasNearbyEnemy(b)) {
+                if (BATTLEFIELD_STATE_PROXIMITY > 0) b.addState(BATTLEFIELD_STATE_PROXIMITY);
+            } else if (BATTLEFIELD_STATE_DISENGAGED > 0) {
+                b.addState(BATTLEFIELD_STATE_DISENGAGED);
+            }
+        });
+    };
+
     // --- ENGAGE -------------------------------------------------------------
 
     Game_Battlefield.prototype.engage = function (attacker, target) {
@@ -461,6 +514,7 @@
 
         attacker._bfZ          = z;
         attacker._bfEngagedWith = this.battlerKey(target);
+        this.refreshRelationStates();
         return true;
     };
 
@@ -515,6 +569,7 @@
                 }
             }
         }
+        this.refreshRelationStates();
     };
 
     // -----------------------------------------------------------------------
@@ -560,6 +615,7 @@
             b._bfZ           = 0;
             b._bfEngagedWith = null;
         });
+        $gameBattlefield.refreshRelationStates();
     };
 
     // -----------------------------------------------------------------------
@@ -649,9 +705,11 @@
         var wy = 8;
         Window_Base.prototype.initialize.call(this, wx, wy, ww, wh);
         this._bfRows = 8;
-        this._bfMinRows = 3;
+        this._bfMinRows = 1;
         this._bfMaxRows = 20;
         this._bfHidden = false;
+        this._bfMinimized = false;
+        this._bfStoredRows = this._bfRows;
         this.opacity = 255;
         this.backOpacity = 255;
         this._bfSeenVersion = -1;
@@ -687,6 +745,19 @@
         return true;
     };
 
+    Window_BfDebug.prototype.setMinimized = function (minimized) {
+        var nextMinimized = !!minimized;
+        if (nextMinimized === this._bfMinimized) return false;
+        this._bfMinimized = nextMinimized;
+        if (nextMinimized) {
+            this._bfStoredRows = Math.max(1, this._bfRows);
+            this.setRows(1);
+        } else {
+            this.setRows(Math.max(1, this._bfStoredRows || 8));
+        }
+        return true;
+    };
+
     Window_BfDebug.prototype.refresh = function () {
         this.contents.clear();
         var pad = this.textPadding();
@@ -712,9 +783,14 @@
                 _bfLog(this._bfDebugWindow._bfHidden ? 'Debug shell hidden.' : 'Debug shell shown.');
             }
             if (!this._bfDebugWindow._bfHidden) {
+                if (Input.isTriggered('shift') && this._bfDebugWindow.setMinimized(!this._bfDebugWindow._bfMinimized)) {
+                    _bfLog(this._bfDebugWindow._bfMinimized ? 'Debug shell minimised.' : 'Debug shell restored.');
+                }
                 if (Input.isTriggered('pagedown') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows + 1)) {
+                    this._bfDebugWindow._bfMinimized = (this._bfDebugWindow._bfRows === 1);
                     _bfLog('Debug shell expanded to ' + this._bfDebugWindow._bfRows + ' rows.');
                 } else if (Input.isTriggered('pageup') && this._bfDebugWindow.setRows(this._bfDebugWindow._bfRows - 1)) {
+                    this._bfDebugWindow._bfMinimized = (this._bfDebugWindow._bfRows === 1);
                     _bfLog('Debug shell contracted to ' + this._bfDebugWindow._bfRows + ' rows.');
                 }
             }
@@ -774,6 +850,7 @@
         if (data) {
             _bfSelect.battler._bfX = data.x;
             _bfSelect.battler._bfY = data.y;
+            $gameBattlefield.refreshRelationStates();
         }
         _bfLogZoneSnapshot(this);
         this._bfCloseMoveWindow();
@@ -848,6 +925,7 @@
                 if (moveBattler._bfZ !== 0) { console.warn('BattlefieldMovement MOVE: battler is engaged and cannot move.'); break; }
                 moveBattler._bfX = parseInt(args[2], 10);
                 moveBattler._bfY = parseInt(args[3], 10);
+                $gameBattlefield.refreshRelationStates();
                 _bfLog('Moved ' + _bfBattlerDisplayName(moveBattler) + ' to [' + moveBattler._bfX + ',' + moveBattler._bfY + '].');
                 break;
             }

@@ -255,6 +255,7 @@
     // chosen slot, then hand control to the engine's 'turn' phase.
     BattleManager.startImmediateAction = function (actor, slotIndex) {
         actor._immediateActionBackup = actor._actions.slice();
+        actor._immediateSlotIndex = slotIndex;
         actor._actions = [actor._actions[slotIndex]];
         this._immediateMode  = true;
         this._immediateActor = actor;
@@ -268,6 +269,10 @@
         if (actor) {
             actor._actions = actor._immediateActionBackup || [];
             actor._immediateActionBackup = null;
+            if (actor._immediateSlotIndex >= 0 && actor._actions[actor._immediateSlotIndex]) {
+                actor._actions[actor._immediateSlotIndex].clear();
+            }
+            actor._immediateSlotIndex = -1;
             while (actor._actions.length < TOTAL_SLOTS) {
                 actor._actions.push(new Game_Action(actor));
             }
