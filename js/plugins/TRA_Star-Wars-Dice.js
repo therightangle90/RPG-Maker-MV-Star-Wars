@@ -4,7 +4,7 @@
  *
  * @param Debug
  * @text Debug
- * @desc When ON, logs dice pool composition and rolled faces whenever a pool is rolled.
+ * @desc When ON, logs dice pool rolls to the console and to dice-debug.log in the game folder.
  * @type boolean
  * @default false
  *
@@ -43,7 +43,10 @@
  *   - each die rolled and its face result
  *   - final cancelled totals
  *
- * Output appears in the browser console and battle log window.
+ * Output is written to dice-debug.log in the game root folder (NW.js desktop)
+ * and to the browser/NW.js console.
+ * The log file is cleared each time the game launches.
+ * Open it in a text editor or tail-capable viewer to follow events live.
  * This is debug behavior for early iteration.
  */
 
@@ -57,6 +60,26 @@ var DiceSystem = (function () {
         return String(v || '').toLowerCase() === 'true';
     }
     var DICE_DEBUG = _boolParam(_params.Debug);
+
+    // File-based logger (NW.js only; silently disabled in browser)
+    var _diceFileLogger = (function () {
+        try {
+            var fs   = require('fs');   // jshint ignore:line
+            var path = require('path'); // jshint ignore:line
+            var logPath = path.join(process.cwd(), 'dice-debug.log'); // jshint ignore:line
+            fs.writeFileSync(logPath, '=== TRA Dice Debug Log ===\n', 'utf8');
+            return {
+                write: function (msg) {
+                    try {
+                        var ts = new Date().toTimeString().substring(0, 8);
+                        fs.appendFileSync(logPath, '[' + ts + '] ' + msg + '\n', 'utf8');
+                    } catch (e) { /* ignore */ }
+                }
+            };
+        } catch (e) {
+            return { write: function () {} };
+        }
+    }());
 
     const dice = {
         boost: [
@@ -243,14 +266,18 @@ var DiceSystem = (function () {
         var detail = typedRolls.map(function (r, i) {
             return (i + 1) + ') ' + r.type + ' [' + _faceToText(r.result) + ']';
         }).join(' | ');
-        console.log('[TRA Dice Debug] Pool ' + poolText);
-        console.log('[TRA Dice Debug] Rolls ' + detail);
-        console.log('[TRA Dice Debug] Totals success:' + (total.success || 0) +
+        var totalsText = 'Totals success:' + (total.success || 0) +
             ' failure:' + (total.failure || 0) +
             ' advantage:' + (total.advantage || 0) +
             ' disadvantage:' + (total.disadvantage || 0) +
             ' triumph:' + (total.triumph || 0) +
-            ' despair:' + (total.despair || 0));
+            ' despair:' + (total.despair || 0);
+        _diceFileLogger.write('Pool ' + poolText);
+        _diceFileLogger.write('Rolls ' + detail);
+        _diceFileLogger.write(totalsText);
+        console.log('[TRA Dice Debug] Pool ' + poolText);
+        console.log('[TRA Dice Debug] Rolls ' + detail);
+        console.log('[TRA Dice Debug] ' + totalsText);
     }
 
     function rollDie(sides) {
@@ -298,6 +325,26 @@ var DiceSystem = (function () {
 
 (function () {
     'use strict';
+
+    // File-based logger reusing same path as the DiceSystem module, but
+    // opened in append mode (DiceSystem already cleared it on load).
+    var _meleeFileLogger = (function () {
+        try {
+            var fs   = require('fs');   // jshint ignore:line
+            var path = require('path'); // jshint ignore:line
+            var logPath = path.join(process.cwd(), 'dice-debug.log'); // jshint ignore:line
+            return {
+                write: function (msg) {
+                    try {
+                        var ts = new Date().toTimeString().substring(0, 8);
+                        fs.appendFileSync(logPath, '[' + ts + '] ' + msg + '\n', 'utf8');
+                    } catch (e) { /* ignore */ }
+                }
+            };
+        } catch (e) {
+            return { write: function () {} };
+        }
+    }());
 
     var MELEE_ELEMENT_NAME = 'melee';
     var _cachedMeleeElementId = null;
@@ -372,29 +419,27 @@ var DiceSystem = (function () {
         var result = DiceSystem.rollPoolDetailed(pool);
         action._traDiceDebug = result;
 
-        var target = (this._targets && this._targets.length > 0) ? this._targets[0] : null;
+        if (!DiceSystem.isDebugEnabled()) return;
+
+        var target     = (this._targets && this._targets.length > 0) ? this._targets[0] : null;
         var targetName = target && target.name ? target.name() : 'No Target';
-        var header = '[TRA Dice] ' + subject.name() + ' -> ' + targetName +
+        var header     = subject.name() + ' -> ' + targetName +
             ' | Pool ability:' + pool.ability + ', difficulty:' + pool.difficulty;
         var detail = result.rolls.map(function (r, i) {
             return (i + 1) + ') ' + r.type + ' [' + faceToText(r.result) + ']';
         }).join(' | ');
-        var totals = '[TRA Dice] Totals success:' + (result.total.success || 0) +
+        var totalsText = 'Totals success:' + (result.total.success || 0) +
             ' failure:' + (result.total.failure || 0) +
             ' advantage:' + (result.total.advantage || 0) +
             ' disadvantage:' + (result.total.disadvantage || 0) +
             ' triumph:' + (result.total.triumph || 0) +
             ' despair:' + (result.total.despair || 0);
 
-        if (DiceSystem.isDebugEnabled()) {
-            console.log(header);
-            console.log('[TRA Dice] Rolls: ' + detail);
-            console.log(totals);
-        }
-
-        if (DiceSystem.isDebugEnabled() && this._logWindow && this._logWindow.addText) {
-            this._logWindow.addText(header);
-            this._logWindow.addText(totals);
-        }
+        _meleeFileLogger.write(header);
+        _meleeFileLogger.write('Rolls: ' + detail);
+        _meleeFileLogger.write(totalsText);
+        console.log('[TRA Dice] ' + header);
+        console.log('[TRA Dice] Rolls: ' + detail);
+        console.log('[TRA Dice] ' + totalsText);
     };
 })();
