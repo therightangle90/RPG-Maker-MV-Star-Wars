@@ -7,7 +7,7 @@
  *
  * @param Debug
  * @text Debug
- * @desc When ON, logs current battlefield zones and participants while the battlefield move screen is open.
+ * @desc When ON, logs to console and shows battlefield debug text on screen during combat.
  * @type boolean
  * @default false
  *
@@ -126,14 +126,25 @@
     }
 
     var BATTLEFIELD_DEBUG = _bfBoolParam(_bfParams.Debug);
+    var _bfDebugLines = ['Debug ON: waiting for battlefield events...'];
+    var _bfDebugVersion = 0;
+
+    function _bfPushDebugLine(line) {
+        if (!BATTLEFIELD_DEBUG) return;
+        _bfDebugLines.push(line);
+        if (_bfDebugLines.length > 12) _bfDebugLines.shift();
+        _bfDebugVersion++;
+    }
 
     function _bfLog(message) {
         if (!BATTLEFIELD_DEBUG) return;
+        _bfPushDebugLine(message);
         console.log('[TRA Battlefield Debug] ' + message);
     }
 
     function _bfWarn(message) {
         if (!BATTLEFIELD_DEBUG) return;
+        _bfPushDebugLine('WARN: ' + message);
         console.warn('[TRA Battlefield Debug] ' + message);
     }
 
@@ -454,8 +465,14 @@
     Scene_Battle.prototype.start = function () {
         _Scene_Battle_start.call(this);
         this._bfMoveSelectWindow = null;
+        this._bfDebugWindow = null;
         this._bfLastDebugSnapshot = '';
         $gameBattlefield.currentMapId = $gameMap.mapId();
+        if (BATTLEFIELD_DEBUG) {
+            this._bfDebugWindow = new Window_BfDebug();
+            this.addWindow(this._bfDebugWindow);
+            _bfLog('Debug overlay active.');
+        }
         _bfLog('Battle start on map ' + $gameBattlefield.currentMapId + '. Existing declared zones: ' + _bfDeclaredZoneKeys().length + '.');
         // Reset all battler positions; declared zone data is preserved.
         $gameBattlefield.allBattlers().forEach(function (b) {
@@ -537,11 +554,46 @@
         });
     };
 
+    // ---- Window_BfDebug -----------------------------------------------------
+
+    function Window_BfDebug() {
+        this.initialize.apply(this, arguments);
+    }
+
+    Window_BfDebug.prototype = Object.create(Window_Base.prototype);
+    Window_BfDebug.prototype.constructor = Window_BfDebug;
+
+    Window_BfDebug.prototype.initialize = function () {
+        var ww = Math.min(760, Graphics.boxWidth - 16);
+        var wh = this.fittingHeight(5);
+        var wx = 8;
+        var wy = 8;
+        Window_Base.prototype.initialize.call(this, wx, wy, ww, wh);
+        this.opacity = 200;
+        this._bfSeenVersion = -1;
+        this.refresh();
+    };
+
+    Window_BfDebug.prototype.refresh = function () {
+        this.contents.clear();
+        var pad = this.textPadding();
+        var lineHeight = this.lineHeight();
+        var visibleRows = Math.max(1, Math.floor(this.contentsHeight() / lineHeight));
+        var start = Math.max(0, _bfDebugLines.length - visibleRows);
+        for (var i = start; i < _bfDebugLines.length; i++) {
+            this.drawTextEx(_bfDebugLines[i], pad, (i - start) * lineHeight);
+        }
+        this._bfSeenVersion = _bfDebugVersion;
+    };
+
     // ---- Scene_Battle integration ------------------------------------------
 
     var _Scene_Battle_update = Scene_Battle.prototype.update;
     Scene_Battle.prototype.update = function () {
         _Scene_Battle_update.call(this);
+        if (BATTLEFIELD_DEBUG && this._bfDebugWindow && this._bfDebugWindow._bfSeenVersion !== _bfDebugVersion) {
+            this._bfDebugWindow.refresh();
+        }
         if (_bfSelect.pending && !this._bfMoveSelectWindow) {
             this._bfCreateMoveWindow();
         }

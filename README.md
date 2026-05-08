@@ -48,6 +48,7 @@ BATTLEFIELD LABEL_MAP 5 0 0 Grassy Knoll
 
 When **Debug** is enabled, the plugin logs:
 
+- an on-screen debug window during combat with the latest battlefield debug lines
 - battle-start map ID and declared zone count
 - every zone declaration
 - battler movement via `BATTLEFIELD MOVE`
@@ -56,7 +57,7 @@ When **Debug** is enabled, the plugin logs:
 - when there are declared zones but **no adjacent zones** for the selected battler
 - the current zone snapshot and which participants are inside each zone
 
-If you do not see the move prompt, turn **Debug** on and check the browser console first.
+If you do not see the move prompt, turn **Debug** on and watch the on-screen debug window first, then check the browser console.
 
 ## TRA_Star-Wars-Dice debug option
 
